@@ -11,7 +11,7 @@ BEGIN
   IF v_existing IS NOT NULL THEN RETURN; END IF;
 
   SELECT wallet_balance INTO v_balance FROM public.customers WHERE id=v_cid;
-  IF v_balance <= 0 THEN RETURN; END IF;
+  IF v_balance IS NULL OR v_balance <= 0 THEN RETURN; END IF;
 
   UPDATE public.customers SET wallet_balance = wallet_balance - v_balance WHERE id = v_cid;
 
