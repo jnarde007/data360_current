@@ -15,7 +15,7 @@ jobs:
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            "https://mqnoycruffqfmwcrjnfs.supabase.co/rest/v1/")
+            "https://mqnoycruffqfmwcrjnfs.supabase.co/rest/v1/public_price_items?select=id&limit=1")
           echo "Supabase HTTP response: $STATUS"
           if [ "$STATUS" -ne 200 ]; then
             echo "Unexpected response from Supabase"
