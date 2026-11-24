@@ -1,4 +1,4 @@
-import { MtnVerifyBadge } from '@/components/MtnVerifyBadge';
+﻿import { MtnVerifyBadge } from '@/components/MtnVerifyBadge';
 import { useSuperAgentPricing } from '@/hooks/use-super-agent-pricing';
 import { SuperAgentBadge } from '@/components/SuperAgentBadge';
 import { BundleTile } from '@/components/BundleTile';
@@ -107,7 +107,7 @@ export default function BuyDataPage() {
 
       const { data, error } = await supabase
         .from('public_price_items' as any)
-        .select('id, network, product, size, price')
+        .select('id, network, product, size, price, is_available')
         .eq('product', 'Data')
         .order('network')
         .order('price');
@@ -117,8 +117,7 @@ export default function BuyDataPage() {
           .filter((d: any) => d.network in availMap) // include all configured networks (even OFF) so we can show the warning
           .map((d: any) => ({
             ...d,
-            price: Number(d.price),
-            cost_price: 0, // cost_price is now resolved server-side in place_order()
+            price: Number(d.price), cost_price: 0, is_available: d.is_available !== false, // cost_price is now resolved server-side in place_order()
           }))
       );
     } catch {
@@ -212,7 +211,7 @@ export default function BuyDataPage() {
 
   const canAfford = (user?.wallet_balance || 0) >= totalAmount;
 
-  // Authorized cross-network exception — managed via `authorized_cross_network_users` table.
+  // Authorized cross-network exception â€” managed via `authorized_cross_network_users` table.
   // Server-side is authoritative (place_order RPC enforces + audits); this is UI-only.
   const [canBypassCrossNetwork, setCanBypassCrossNetwork] = useState(false);
   useEffect(() => {
@@ -308,17 +307,17 @@ export default function BuyDataPage() {
     } else {
       if (bulkOrders.length === 0) { toast({ title: 'No orders added', description: 'Please add at least one order to your queue.', variant: 'destructive' }); return; }
       const invalid = bulkOrders.find(o => !isValidPhone(o.phone));
-      if (invalid) { toast({ title: 'Invalid phone in queue', description: `${invalid.phone} — ${PHONE_ERROR_MESSAGE}`, variant: 'destructive' }); return; }
+      if (invalid) { toast({ title: 'Invalid phone in queue', description: `${invalid.phone} â€” ${PHONE_ERROR_MESSAGE}`, variant: 'destructive' }); return; }
       if (bulkMismatches.length > 0) {
         toast({
           title: `${bulkMismatches.length} number${bulkMismatches.length > 1 ? 's do' : ' does'} not match ${selectedNetwork}`,
-          description: `Remove or fix: ${bulkMismatches.slice(0, 5).map(m => `${m.phone} (${m.detectedNetwork || 'unknown'})`).join(', ')}${bulkMismatches.length > 5 ? '…' : ''}. Mixed-network batches are not allowed.`,
+          description: `Remove or fix: ${bulkMismatches.slice(0, 5).map(m => `${m.phone} (${m.detectedNetwork || 'unknown'})`).join(', ')}${bulkMismatches.length > 5 ? 'â€¦' : ''}. Mixed-network batches are not allowed.`,
           variant: 'destructive',
         });
         return;
       }
     }
-    // Balance check removed — handled in confirmation dialog per payment method
+    // Balance check removed â€” handled in confirmation dialog per payment method
 
     setCheckingDuplicates(true);
     try {
@@ -349,7 +348,7 @@ export default function BuyDataPage() {
       const avail = await checkRecipientAvailability(items);
       if (avail.blocked) {
         toast({
-          title: 'Order blocked — active order exists',
+          title: 'Order blocked â€” active order exists',
           description: formatBlockedMessage(avail.blocked_items),
           variant: 'warning',
         });
@@ -461,7 +460,7 @@ export default function BuyDataPage() {
       );
       if (avail.blocked) {
         toast({
-          title: 'Payment blocked — active order exists',
+          title: 'Payment blocked â€” active order exists',
           description: formatBlockedMessage(avail.blocked_items),
           variant: 'warning',
         });
@@ -473,7 +472,7 @@ export default function BuyDataPage() {
 
     // Authoritative network availability re-check: don't open Paystack if the
     // selected network has been toggled OFF since the page loaded.
-    // Read from `available_networks` view — `network_api_configs` is admin-only via RLS.
+    // Read from `available_networks` view â€” `network_api_configs` is admin-only via RLS.
     try {
       const { data: netCfg } = await supabase
         .from('available_networks' as any)
@@ -681,8 +680,8 @@ export default function BuyDataPage() {
                   <div className="space-y-3">
                     {[
                       { label: 'Order ID', value: <span className="font-mono text-primary font-semibold">{po.shortId}</span> },
-                      { label: 'Bundle', value: bundle ? fmtSize(bundle.size) : bulkOrders.length > 0 ? `${bulkOrders.length} items` : '—' },
-                      { label: 'Recipient', value: <span className="font-mono">{phone || (bulkOrders.length > 0 ? `${bulkOrders.length} numbers` : '—')}</span> },
+                      { label: 'Bundle', value: bundle ? fmtSize(bundle.size) : bulkOrders.length > 0 ? `${bulkOrders.length} items` : 'â€”' },
+                      { label: 'Recipient', value: <span className="font-mono">{phone || (bulkOrders.length > 0 ? `${bulkOrders.length} numbers` : 'â€”')}</span> },
                     ].map(row => (
                       <div key={row.label} className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{row.label}</span>
@@ -817,7 +816,7 @@ export default function BuyDataPage() {
             })}
           </div>
 
-          {/* Network OFF — delivery halted notice */}
+          {/* Network OFF â€” delivery halted notice */}
           {selectedNetwork && networkAvailability[selectedNetwork] === false && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/[0.08] p-3.5 flex items-start gap-2.5" role="alert">
               <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -832,7 +831,7 @@ export default function BuyDataPage() {
             </div>
           )}
 
-          {/* MTN Notice — collapsible */}
+          {/* MTN Notice â€” collapsible */}
           {selectedNetwork === 'MTN' && (
             <div className="rounded-[20px] border border-amber-400/40 bg-gradient-to-br from-amber-50 to-yellow-50/60 dark:from-amber-500/10 dark:to-yellow-500/5 shadow-sm">
               <button
@@ -882,7 +881,7 @@ export default function BuyDataPage() {
         {/* Order Form */}
         {selectedNetwork && availableBundles.length > 0 && (
           <>
-            {/* Mode Toggle — flat with network accent */}
+            {/* Mode Toggle â€” flat with network accent */}
             <div className="flex items-center rounded-lg bg-muted/60 p-0.5 w-fit">
               <button
                 onClick={() => setBulkMode(false)}
@@ -949,7 +948,7 @@ export default function BuyDataPage() {
                       <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-[11px] text-destructive">
                         <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                         <span>
-                          {bulkMismatches.length} number{bulkMismatches.length > 1 ? 's do' : ' does'} not belong to {selectedNetwork}. Remove or replace them — mixed-network batches will be rejected.
+                          {bulkMismatches.length} number{bulkMismatches.length > 1 ? 's do' : ' does'} not belong to {selectedNetwork}. Remove or replace them â€” mixed-network batches will be rejected.
                           <button
                             onClick={() => setBulkOrders(prev => prev.filter(o => o.detectedNetwork === selectedNetwork))}
                             className="ml-2 underline font-semibold"
@@ -1024,7 +1023,7 @@ export default function BuyDataPage() {
                   <div role="radiogroup" aria-label="Bundle size" className="grid grid-cols-3 gap-2">
                     {(showAllBundles ? availableBundles : availableBundles.slice(0, 6)).map(b => {
                       return (
-                        <BundleTile key={b.id} network={selectedNetwork} size={fmtSize(b.size)} price={formatGHS(b.price)}
+                        <BundleTile key={b.id} network={selectedNetwork} size={fmtSize(b.size)} price={formatGHS(b.price)} isAvailable={(b as any).is_available !== false}
                           active={selectedBundle === b.id} onClick={() => setSelectedBundle(b.id)} />
                       );
                     })}
@@ -1048,14 +1047,14 @@ export default function BuyDataPage() {
               </div>
             )}
 
-            {/* Primary CTA — network colored */}
+            {/* Primary CTA â€” network colored */}
             <Button
               onClick={handleOrder}
               disabled={!hasItems || checkingDuplicates || !mtnReady}
               className={`w-full h-12 text-[15px] font-semibold border-0 rounded-[10px] transition-all duration-200 ease-in-out gap-2.5 ${selectedNetwork ? getNetworkAccent(selectedNetwork).btnPlaceOrder : 'bg-primary text-primary-foreground shadow-[0_4px_10px_rgba(0,0,0,0.15)]'}`}
             >
               {checkingDuplicates || !mtnReady ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> {!mtnReady ? 'Checking MTN number…' : 'Checking...'}</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> {!mtnReady ? 'Checking MTN numberâ€¦' : 'Checking...'}</>
               ) : (
                 <><ShoppingCart className="w-4.5 h-4.5" /> Place Order</>
               )}
@@ -1087,7 +1086,7 @@ export default function BuyDataPage() {
                   )}
                   <div className="min-w-0">
                     <AlertDialogTitle className="text-lg font-bold leading-tight">Confirm Your Order</AlertDialogTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">{selectedNetwork} Data Bundle{bulkMode ? ` · ${bulkOrders.length} recipients` : ''}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selectedNetwork} Data Bundle{bulkMode ? ` Â· ${bulkOrders.length} recipients` : ''}</p>
                   </div>
                 </div>
               </div>
@@ -1099,7 +1098,7 @@ export default function BuyDataPage() {
                       <div className="max-h-32 overflow-y-auto space-y-1 text-xs rounded-lg bg-muted/40 p-2.5">
                         {bulkOrders.map((o, i) => (
                           <div key={o.id} className="flex justify-between">
-                            <span>{i + 1}. {o.phone} — {o.bundleLabel}</span>
+                            <span>{i + 1}. {o.phone} â€” {o.bundleLabel}</span>
                             <span className="font-medium">{formatGHS(o.price)}</span>
                           </div>
                         ))}
@@ -1194,3 +1193,4 @@ export default function BuyDataPage() {
     </CustomerLayout>
   );
 }
+

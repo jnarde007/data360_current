@@ -20,7 +20,7 @@ export function capacitiesFromCatalog(items: { product?: string | null; size?: s
 export const MTN_IGET_BUNDLE_TYPES = ['mtnup2u', 'mtn-justforu', 'mtn-fibre'] as const;
 
 export function resolveMtnProvider(order: { provider_name?: string | null; provider_routing_version?: number | null }) {
-  if (order.provider_name === 'Portal-02' || order.provider_name === 'iGet') return order.provider_name;
+  if (order.provider_name === 'Portal-02' || order.provider_name === 'iGet' || order.provider_name === 'PowerConnect' || order.provider_name === 'PowerConnect') return order.provider_name;
   // Pre-switch legacy MTN orders must never inherit a later administrator selection.
   if (!order.provider_routing_version) return 'Portal-02';
   throw new Error('Pinned MTN provider is missing or invalid');

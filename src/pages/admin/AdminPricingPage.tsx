@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import { formatGHS } from '@/lib/mock-data';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ interface PriceItem {
   size: string;
   price: number;
   cost_price: number;
+is_available?: boolean;
 }
 
 const productTypes = ['Data', 'Airtime', 'AFA Registration'];
@@ -51,14 +52,33 @@ export default function AdminPricingPage() {
     try {
       const { data, error } = await supabase
         .from('price_items')
-        .select('id, network, product, size, price, cost_price')
+        .select('id, network, product, size, price, cost_price, is_available')
         .order('network');
       if (error) throw error;
-      setItems((data || []).map(d => ({ ...d, price: Number(d.price), cost_price: Number((d as any).cost_price || 0) })));
+      setItems((data || []).map(d => ({ ...d, price: Number(d.price), cost_price: Number((d as any).cost_price || 0), is_available: (d as any).is_available !== false })));
     } catch {
       toast({ title: 'Unable to load pricing', description: 'Please refresh the page and try again.', variant: 'destructive' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleStock = async (item: PriceItem) => {
+    const currentStatus = item.is_available !== false;
+    const newStatus = !currentStatus;
+    const { error } = await supabase
+      .from('price_items')
+      .update({ is_available: newStatus })
+      .eq('id', item.id);
+
+    if (error) {
+      toast({ title: 'Failed to update stock status', description: error.message, variant: 'destructive' });
+    } else {
+      toast({
+        title: newStatus ? 'Bundle in stock' : 'Bundle marked out of stock',
+        description: item.network + ' ' + (item.size || '') + ' is now ' + (newStatus ? 'in stock' : 'out of stock') + '.',
+      });
+      setItems(prev => prev.map(p => p.id === item.id ? { ...p, is_available: newStatus } : p));
     }
   };
 
@@ -67,7 +87,7 @@ export default function AdminPricingPage() {
     return !q || item.network.toLowerCase().includes(q) || item.product.toLowerCase().includes(q) || item.size.toLowerCase().includes(q);
   });
 
-  /** Extract numeric value from size string for sorting (e.g. "1GB" → 1, "500MB" → 0.5) */
+  /** Extract numeric value from size string for sorting (e.g. "1GB" â†’ 1, "500MB" â†’ 0.5) */
   const parseNumericSize = (size: string): number => {
     if (!size) return 0;
     const lower = size.toLowerCase().trim();
@@ -117,7 +137,7 @@ export default function AdminPricingPage() {
   };
 
   const getPricingWarning = (price: number, cost: number) => {
-    if (cost > 0 && price < cost) return { level: 'error' as const, text: 'Selling price is below cost — you will lose money on this item.' };
+    if (cost > 0 && price < cost) return { level: 'error' as const, text: 'Selling price is below cost â€” you will lose money on this item.' };
     if (cost > 0 && price > 0) {
       const pct = ((price - cost) / cost) * 100;
       if (pct > 0 && pct < 5) return { level: 'warn' as const, text: `Very low margin (${pct.toFixed(1)}%). Consider increasing the selling price.` };
@@ -133,7 +153,7 @@ export default function AdminPricingPage() {
       return;
     }
     if (isDuplicate(addNetwork.trim(), addProduct.trim(), addSize.trim())) {
-      toast({ title: 'Duplicate item', description: `A pricing item for ${addNetwork} — ${addProduct} ${addSize || ''} already exists.`.trim(), variant: 'destructive', duration: 6000 });
+      toast({ title: 'Duplicate item', description: `A pricing item for ${addNetwork} â€” ${addProduct} ${addSize || ''} already exists.`.trim(), variant: 'destructive', duration: 6000 });
       return;
     }
     try {
@@ -249,7 +269,7 @@ export default function AdminPricingPage() {
                             key={item.id}
                             fields={[
                               { label: 'Product', value: item.product },
-                              { label: 'Data Size', value: item.size || '—' },
+                              { label: 'Data Size', value: item.size || 'â€”' },
                               { label: 'Price', value: formatGHS(item.price) },
                               { label: 'Margin', value: `${formatGHS(margin)}${profitPct ? ` (${profitPct}%)` : ''}` },
                             ]}
@@ -276,7 +296,7 @@ export default function AdminPricingPage() {
                             <th className="px-4 py-2 font-medium text-muted-foreground">Cost Price</th>
                             <th className="px-4 py-2 font-medium text-muted-foreground">Selling Price</th>
                             <th className="px-4 py-2 font-medium text-muted-foreground">Margin / Profit</th>
-                            <th className="px-4 py-2 font-medium text-muted-foreground">Action</th>
+                            <th className="px-4 py-2 font-medium text-muted-foreground text-center">Stock</th>`r`n                            <th className="px-4 py-2 font-medium text-muted-foreground">Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -287,7 +307,7 @@ export default function AdminPricingPage() {
                             return (
                               <tr key={item.id} className={`border-t border-border/50 hover:bg-secondary/20 transition-colors ${warning?.level === 'error' ? 'bg-destructive/5' : ''}`}>
                                 <td className="px-4 py-3 text-foreground">{item.product}</td>
-                                <td className="px-4 py-3 text-primary font-medium">{item.size || '—'}</td>
+                                <td className="px-4 py-3 text-primary font-medium">{item.size || 'â€”'}</td>
                                 <td className="px-4 py-3 text-muted-foreground">{formatGHS(item.cost_price)}</td>
                                 <td className="px-4 py-3 text-foreground">{formatGHS(item.price)}</td>
                                 <td className={`px-4 py-3 font-medium ${margin > 0 ? 'text-primary' : margin < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
@@ -295,6 +315,19 @@ export default function AdminPricingPage() {
                                     {warning?.level === 'error' && <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />}
                                     <span>{formatGHS(margin)}{profitPct ? ` (${profitPct}%)` : ''}</span>
                                   </div>
+                                </td>
+                                                                <td className="px-4 py-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleStock(item)}
+                                    className={`px-2.5 py-1 text-xs font-semibold rounded-full transition-colors ${
+                                      item.is_available !== false
+                                        ? 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 dark:text-emerald-400'
+                                        : 'bg-destructive/15 text-destructive hover:bg-destructive/25'
+                                    }`}
+                                  >
+                                    {item.is_available !== false ? 'In Stock' : 'Out of Stock'}
+                                  </button>
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="flex gap-2">
@@ -318,12 +351,12 @@ export default function AdminPricingPage() {
             <p className="text-center text-muted-foreground py-8">No data bundle items found</p>
           )}
 
-          {/* ── Dedicated AFA Registration section (separate from MTN data bundles) ── */}
+          {/* â”€â”€ Dedicated AFA Registration section (separate from MTN data bundles) â”€â”€ */}
           <div className="border border-yellow-500/30 rounded-lg mt-4">
             <div className="flex items-center justify-between p-3 sm:p-4 bg-yellow-500/5 rounded-t-lg">
               <div>
                 <h3 className="font-bold text-foreground">MTN AFA Registration</h3>
-                <p className="text-xs text-muted-foreground">{afaItems.length} item(s) · Set the registration fee separately from data bundles.</p>
+                <p className="text-xs text-muted-foreground">{afaItems.length} item(s) Â· Set the registration fee separately from data bundles.</p>
               </div>
             </div>
             {afaItems.length === 0 ? (
@@ -338,7 +371,7 @@ export default function AdminPricingPage() {
                       <th className="px-4 py-2 font-medium text-muted-foreground">Cost Price</th>
                       <th className="px-4 py-2 font-medium text-muted-foreground">Selling Price</th>
                       <th className="px-4 py-2 font-medium text-muted-foreground">Margin</th>
-                      <th className="px-4 py-2 font-medium text-muted-foreground">Action</th>
+                      <th className="px-4 py-2 font-medium text-muted-foreground text-center">Stock</th>`r`n                            <th className="px-4 py-2 font-medium text-muted-foreground">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -348,14 +381,27 @@ export default function AdminPricingPage() {
                       return (
                         <tr key={item.id} className="border-t border-border/50 hover:bg-secondary/20 transition-colors">
                           <td className="px-4 py-3 text-foreground">{item.network}</td>
-                          <td className="px-4 py-3 text-primary font-medium">{item.size || '—'}</td>
+                          <td className="px-4 py-3 text-primary font-medium">{item.size || 'â€”'}</td>
                           <td className="px-4 py-3 text-muted-foreground">{formatGHS(item.cost_price)}</td>
                           <td className="px-4 py-3 text-foreground">{formatGHS(item.price)}</td>
                           <td className={`px-4 py-3 font-medium ${margin > 0 ? 'text-primary' : margin < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
                             {formatGHS(margin)}{profitPct ? ` (${profitPct}%)` : ''}
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
+                                                          <td className="px-4 py-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleStock(item)}
+                                    className={`px-2.5 py-1 text-xs font-semibold rounded-full transition-colors ${
+                                      item.is_available !== false
+                                        ? 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 dark:text-emerald-400'
+                                        : 'bg-destructive/15 text-destructive hover:bg-destructive/25'
+                                    }`}
+                                  >
+                                    {item.is_available !== false ? 'In Stock' : 'Out of Stock'}
+                                  </button>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex gap-2">
                               <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground h-7 px-3 text-xs rounded-full" onClick={() => setEditItem({ ...item })}>Edit</Button>
                               <Button size="sm" variant="destructive" className="h-7 px-3 text-xs rounded-full" onClick={() => setDeleteItem(item)}>Delete</Button>
                             </div>
@@ -541,11 +587,11 @@ export default function AdminPricingPage() {
         <DetailViewDialog
           open={!!detailItem}
           onOpenChange={open => !open && setDetailItem(null)}
-          title={`${detailItem.network} — ${detailItem.product}`}
+          title={`${detailItem.network} â€” ${detailItem.product}`}
           fields={[
             { label: 'Network', value: detailItem.network },
             { label: 'Product', value: detailItem.product },
-            { label: 'Data Size', value: detailItem.size || '—' },
+            { label: 'Data Size', value: detailItem.size || 'â€”' },
             { label: 'Cost Price', value: formatGHS(detailItem.cost_price) },
             { label: 'Selling Price', value: formatGHS(detailItem.price) },
             { label: 'Margin', value: formatGHS(detailItem.price - detailItem.cost_price) },
@@ -555,3 +601,4 @@ export default function AdminPricingPage() {
     </AdminLayout>
   );
 }
+

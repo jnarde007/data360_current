@@ -1,4 +1,4 @@
-import { MtnVerifyBadge } from '@/components/MtnVerifyBadge';
+﻿import { MtnVerifyBadge } from '@/components/MtnVerifyBadge';
 import { BundleTile } from '@/components/BundleTile';
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -63,7 +63,7 @@ export default function GuestBuyPage() {
   const [searchParams] = useSearchParams();
   const { paystackReady, paystackFailed, retryLoad, openPaystack } = usePaystack();
 
-  // Affiliate attribution — persist from URL
+  // Affiliate attribution â€” persist from URL
   const affiliateCode = useMemo(() => {
     const fromUrl = searchParams.get('ref') || searchParams.get('affiliate') || '';
     if (fromUrl) {
@@ -91,7 +91,7 @@ export default function GuestBuyPage() {
 
       const { data, error } = await supabase
         .from('public_price_items' as any)
-        .select('id, network, product, size, price')
+        .select('id, network, product, size, price, is_available')
         .eq('product', 'Data')
         .order('network')
         .order('price');
@@ -99,7 +99,7 @@ export default function GuestBuyPage() {
       setPriceItems(
         ((data as any[]) || [])
           .filter((d: any) => d.network in availMap)
-          .map((d: any) => ({ ...d, price: Number(d.price) }))
+          .map((d: any) => ({ ...d, price: Number(d.price), is_available: d.is_available !== false }))
       );
     } catch {
       toast({ title: 'Unable to load bundles', description: 'Please refresh.', variant: 'destructive' });
@@ -213,7 +213,7 @@ export default function GuestBuyPage() {
         setSubmitting(false);
         setSubmitting(false);
         toast({
-          title: 'Payment blocked — active order exists',
+          title: 'Payment blocked â€” active order exists',
           description: formatBlockedMessage(avail.blocked_items),
           variant: 'warning',
         });
@@ -284,7 +284,7 @@ export default function GuestBuyPage() {
             if (finalRes.error) throw new Error(finalRes.error.message);
             if (result?.error) throw new Error(result.error);
 
-            // Success — clear recovery context and navigate to success page
+            // Success â€” clear recovery context and navigate to success page
             clearGuestPendingPayment();
             const trackingToken = result?.tracking_token || result?.orders?.[0]?.tracking_token || '';
             const successParams = new URLSearchParams();
@@ -303,7 +303,7 @@ export default function GuestBuyPage() {
 
             navigate(`/guest/success?${successParams.toString()}`);
           } catch (e: any) {
-            // Don't redirect away — keep form intact and show inline recovery surface
+            // Don't redirect away â€” keep form intact and show inline recovery surface
             setVerifyIssue({
               reference: ref,
               message: e?.message || 'Verification is taking longer than expected.',
@@ -337,7 +337,7 @@ export default function GuestBuyPage() {
     );
   }
 
-  // Submitting state — split into "opening" (pre-popup) and "verifying" (post-success)
+  // Submitting state â€” split into "opening" (pre-popup) and "verifying" (post-success)
   if (submitting) {
     const isVerifying = submitPhase === 'verifying';
     return (
@@ -348,7 +348,7 @@ export default function GuestBuyPage() {
           </div>
           <div className="text-center space-y-1.5">
             <h2 className="text-xl font-display font-bold text-foreground">
-              {isVerifying ? 'Verifying your payment…' : 'Opening secure payment…'}
+              {isVerifying ? 'Verifying your paymentâ€¦' : 'Opening secure paymentâ€¦'}
             </h2>
             <p className="text-sm text-muted-foreground">
               {isVerifying ? 'Please wait while we confirm your order.' : 'Paystack will open in a moment.'}
@@ -366,7 +366,7 @@ export default function GuestBuyPage() {
         {/* In-page guest payment recovery (auto-detects in-flight references) */}
         <GuestPaymentRecoveryBanner />
 
-        {/* Inline verify-issue panel — shown when finalize takes longer than expected */}
+        {/* Inline verify-issue panel â€” shown when finalize takes longer than expected */}
         {verifyIssue && (
           <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 space-y-3">
             <div className="flex items-start gap-2.5">
@@ -447,7 +447,7 @@ export default function GuestBuyPage() {
                 )}
                 <div>
                   <h1 className="text-lg font-display font-bold text-foreground tracking-tight">{selectedNetwork} Data Bundle</h1>
-                  <p className="text-xs text-muted-foreground">No account needed — pay instantly with Paystack</p>
+                  <p className="text-xs text-muted-foreground">No account needed â€” pay instantly with Paystack</p>
                 </div>
               </div>
               </>
@@ -548,7 +548,7 @@ export default function GuestBuyPage() {
                 <div className="flex items-center gap-2">
                   <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${selectedNetwork ? getNetworkAccent(selectedNetwork).stepBadge : 'bg-muted text-muted-foreground'}`}>2</span>
                   <span className="text-sm font-medium text-foreground">Recipient phone</span>
-                  <span className="text-[11px] text-muted-foreground">— Where the order goes</span>
+                  <span className="text-[11px] text-muted-foreground">â€” Where the order goes</span>
                 </div>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -580,7 +580,7 @@ export default function GuestBuyPage() {
                 <div role="radiogroup" aria-label="Bundle size" className="grid grid-cols-3 gap-2">
                   {(showAllBundles ? availableBundles : availableBundles.slice(0, 6)).map(b => {
                     return (
-                      <BundleTile key={b.id} network={selectedNetwork} size={fmtSize(b.size)} price={formatGHS(b.price)}
+                      <BundleTile key={b.id} network={selectedNetwork} size={fmtSize(b.size)} price={formatGHS(b.price)} isAvailable={(b as any).is_available !== false}
                         active={selectedBundle === b.id} onClick={() => setSelectedBundle(b.id)} />
                     );
                   })}
@@ -599,7 +599,7 @@ export default function GuestBuyPage() {
                 <div className="flex items-center gap-2">
                   <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${selectedNetwork ? getNetworkAccent(selectedNetwork).stepBadge : 'bg-muted text-muted-foreground'}`}>4</span>
                   <span className="text-sm font-medium text-foreground">Your phone</span>
-                  <span className="text-[11px] text-muted-foreground">— Where we send your tracking updates</span>
+                  <span className="text-[11px] text-muted-foreground">â€” Where we send your tracking updates</span>
                 </div>
                 <div className="space-y-3">
                   <div className="relative">
@@ -644,7 +644,7 @@ export default function GuestBuyPage() {
                 </div>
               )}
 
-              {/* Primary CTA — network colored */}
+              {/* Primary CTA â€” network colored */}
               <Button
                 onClick={handleCheckout}
                 disabled={!canCheckout || !mtnReady}
@@ -767,7 +767,7 @@ export default function GuestBuyPage() {
   );
 }
 
-/* Lightweight shell for guest pages — no sidebar, no auth required */
+/* Lightweight shell for guest pages â€” no sidebar, no auth required */
 function GuestShell({ children, theme, toggleTheme, affiliateCode }: {
   children: React.ReactNode;
   theme: string;
@@ -801,3 +801,4 @@ function GuestShell({ children, theme, toggleTheme, affiliateCode }: {
     </div>
   );
 }
+
