@@ -1,0 +1,22 @@
+﻿name: Keep Supabase Awake
+
+on:
+  schedule:
+    # Runs every 3 days at 06:00 UTC
+    - cron: '0 6 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            "https://mqnoycruffqfmwcrjnfs.supabase.co/rest/v1/available_networks?select=id&limit=1")
+          echo "Supabase HTTP response: $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Unexpected response from Supabase"
+            exit 1
+          fi
