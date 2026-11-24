@@ -1,0 +1,1 @@
+UPDATE platform_settings SET value = 'true' WHERE key = 'require_email_verification'

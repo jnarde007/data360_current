@@ -1,0 +1,160 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790710398947,
+      "tag": "0000_request_store_payout",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790755647647,
+      "tag": "0001_expose_payout_min_store_to_customers",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791600239695,
+      "tag": "0002_admin_mark_payout_paid_momo",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791600301719,
+      "tag": "0003_fix_admin_mark_payout_paid_momo_rail",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793721773860,
+      "tag": "0004_mtn_provider_management_and_order_pinning",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793759024687,
+      "tag": "0005_mtn_dual_provider_toggles",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793759033417,
+      "tag": "0006_mtn_provider_admin_rpcs",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793759046857,
+      "tag": "0007_mtn_provider_switch_rpc",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793923496114,
+      "tag": "0008_price_item_delete_keeps_store_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793923522587,
+      "tag": "0009_store_orders_kind_check_allow_deleted_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793926643359,
+      "tag": "0010_tighten_public_storage_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793949165884,
+      "tag": "0011_allow_manual_mtn_repin",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793953225299,
+      "tag": "0012_mtn_number_verification_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794864333802,
+      "tag": "0013_customer_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794867313433,
+      "tag": "0014_super_agent_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794869012945,
+      "tag": "0015_developer_api_purchases",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794869640078,
+      "tag": "0016_super_agent_active_require_active_customer",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794870892805,
+      "tag": "0017_developer_api_purchases_customer_created_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794871114050,
+      "tag": "0018_developer_api_usage_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794871168786,
+      "tag": "0019_fix_developer_api_usage_empty_count",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794871938697,
+      "tag": "0020_developer_api_request_monitoring",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794873800312,
+      "tag": "0021_place_order_caller_and_price_guard",
+      "breakpoints": true
+    }
+  ]
+}

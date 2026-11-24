@@ -1,0 +1,1 @@
+UPDATE platform_settings SET value = 'https://api.wittyflow.com/v1' WHERE key = 'sms_api_base_url';

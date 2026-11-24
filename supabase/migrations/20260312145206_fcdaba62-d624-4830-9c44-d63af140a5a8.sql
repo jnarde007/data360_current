@@ -1,0 +1,1 @@
+ALTER TABLE public.network_api_configs ADD COLUMN available_for_purchase boolean NOT NULL DEFAULT true;

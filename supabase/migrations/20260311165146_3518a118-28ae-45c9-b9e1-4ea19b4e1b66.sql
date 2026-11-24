@@ -1,0 +1,1 @@
+UPDATE customers SET wallet_balance = 5.00 WHERE id = '180843af-0475-46f5-9ddc-c6c13633dd25'

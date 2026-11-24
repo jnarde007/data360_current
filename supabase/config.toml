@@ -1,0 +1,79 @@
+project_id = "bpntlyplmitxiaounthf"
+
+[functions]
+  [functions.admin-customer-action]
+    verify_jwt = false
+  [functions.auth-email-hook]
+    verify_jwt = false
+  [functions.cancel-order]
+    verify_jwt = false
+  [functions.create-admin-user]
+    verify_jwt = false
+  [functions.deliver-order]
+    verify_jwt = false
+  [functions.order-webhook]
+    verify_jwt = false
+  [functions.paystack-webhook]
+    verify_jwt = false
+  [functions.process-email-queue]
+    verify_jwt = true
+  [functions.process-pending-orders]
+    verify_jwt = false
+  [functions.reject-order]
+    verify_jwt = false
+  [functions.send-verification-email]
+    verify_jwt = false
+  [functions.verify-email-token]
+    verify_jwt = false
+  [functions.send-transactional-email]
+    verify_jwt = false
+  [functions.verify-paystack]
+    verify_jwt = false
+  [functions.delete-customer]
+    verify_jwt = false
+  [functions.check-admin-login]
+    verify_jwt = false
+  [functions.repair-signup-blockers]
+    verify_jwt = false
+  [functions.confirm-user-email]
+    verify_jwt = false
+  [functions.server-time]
+    verify_jwt = false
+  [functions.cleanup-notifications]
+    verify_jwt = false
+  [functions.poll-mtn-orders]
+    verify_jwt = false
+  [functions.recover-stale-payments]
+    verify_jwt = false
+  [functions.fetch-provider-balances]
+    verify_jwt = false
+  [functions.finalize-payment]
+    verify_jwt = false
+  [functions.paystack-direct-order]
+    verify_jwt = false
+  [functions.paystack-direct-checker]
+    verify_jwt = false
+  [functions.send-sms]
+    verify_jwt = false
+  [functions.paystack-blind-sweep]
+    verify_jwt = false
+  [functions.process-afa-status]
+    verify_jwt = false
+  [functions.store-owner-notify]
+    verify_jwt = false
+  [functions.send-profit-digests]
+    verify_jwt = false
+  [functions.payout-initiate]
+    verify_jwt = false
+  [functions.payout-retry]
+    verify_jwt = false
+  [functions.reconcile-payouts]
+    verify_jwt = false
+  [functions.provider-diagnostic]
+    verify_jwt = true
+
+  [functions.process-order-refund]
+    verify_jwt = false
+
+  [functions.reprocess-order]
+    verify_jwt = false

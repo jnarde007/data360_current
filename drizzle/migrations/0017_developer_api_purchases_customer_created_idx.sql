@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_developer_api_purchases_customer_created ON public.developer_api_purchases (customer_id, created_at DESC);

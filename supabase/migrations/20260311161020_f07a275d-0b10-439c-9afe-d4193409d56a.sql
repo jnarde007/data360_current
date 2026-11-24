@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.place_order(uuid, text, text, text, integer, numeric, numeric);

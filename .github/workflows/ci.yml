@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint · typecheck · test · build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint (advisory — see ci/LINT_BASELINE.md)
+        id: lint
+        continue-on-error: true
+        run: npm run lint
+
+      - name: TypeScript compile check
+        run: npx tsc -p tsconfig.app.json --noEmit
+
+      - name: Unit tests (Vitest)
+        run: npx vitest run --reporter=default --reporter=json --outputFile=vitest-report.json
+
+      - name: Production build
+        run: npm run build
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Frontend results"
+            echo ""
+            if [ -f vitest-report.json ]; then
+              node -e "const r=require('./vitest-report.json');console.log('- Total tests: '+r.numTotalTests);console.log('- Passed: '+r.numPassedTests);console.log('- Failed: '+r.numFailedTests);console.log('- Skipped: '+(r.numPendingTests||0));"
+            fi
+            echo "- Lint outcome: ${{ steps.lint.outcome }} (advisory)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-report
+          path: vitest-report.json
+          if-no-files-found: ignore
+
+  edge-functions:
+    name: Edge Functions (Deno tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Cache Deno deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('supabase/functions/**/*.ts') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      - name: Deno check (typecheck all functions)
+        run: |
+          shopt -s globstar nullglob
+          files=(supabase/functions/**/index.ts)
+          if [ ${#files[@]} -gt 0 ]; then
+            deno check --no-lock "${files[@]}" || echo "::warning::deno check reported issues"
+          fi
+        shell: bash
+        continue-on-error: true
+
+      - name: Run edge function tests
+        run: |
+          shopt -s globstar nullglob
+          tests=(supabase/functions/**/*.test.ts supabase/functions/**/*_test.ts)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "No edge function tests found — skipping."
+            exit 0
+          fi
+          deno test --allow-net --allow-env --allow-read --no-lock "${tests[@]}"
+        shell: bash
+
+      - name: Job summary
+        if: always()
+        run: echo "## Edge functions — see job log for Deno test output" >> "$GITHUB_STEP_SUMMARY"
+
+  security:
+    name: Security · Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: npm audit (high+critical, advisory)
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      - name: Job summary
+        if: always()
+        run: echo "## Security — npm audit advisory (see log)" >> "$GITHUB_STEP_SUMMARY"
