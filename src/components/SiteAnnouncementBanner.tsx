@@ -101,7 +101,7 @@ export function SiteAnnouncementBanner() {
         role="region"
         aria-label="Site announcement"
         onClick={() => setIsDialogOpen(true)}
-        className={`w-full h-11 sm:h-12 px-3 sm:px-5 flex items-center justify-between overflow-hidden cursor-pointer select-none border-b shadow-sm relative z-40 transition-colors antialiased ${themeStyles.bar}`}
+        className={`w-full h-11 sm:h-12 px-3 sm:px-5 flex items-center justify-between overflow-hidden cursor-pointer select-none border-b shadow-sm sticky top-0 z-50 transition-colors antialiased ${themeStyles.bar}`}
         title="Tap to read full announcement"
       >
         {/* Left pinned pill badge */}
