@@ -11,7 +11,7 @@ import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, Plus, ArrowLeft, Send, Paperclip,
-  X, Search, MessageSquare, Receipt, CheckCheck
+  X, Search, MessageSquare, Receipt
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
@@ -64,7 +64,7 @@ export default function SupportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deepLinkedRef = useRef(false);
 
-  // Load conversations with real latest message preview & unread counts
+  // Load conversations with latest preview and unread counters
   const loadTickets = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -80,7 +80,6 @@ export default function SupportPage() {
       if (list.length > 0) {
         const ticketIds = list.map(t => t.id);
 
-        // Fetch messages for these tickets
         const { data: allMsgs } = await supabase
           .from('support_messages')
           .select('ticket_id, sender_role, message, created_at, read_at')
@@ -91,14 +90,13 @@ export default function SupportPage() {
         const latestMsgMap: Record<string, { text: string; role: string; time: string }> = {};
 
         (allMsgs || []).forEach((m: any) => {
-          // Record latest message
           latestMsgMap[m.ticket_id] = {
             text: m.message === '[Attachment]' ? '📎 Attachment' : m.message,
             role: m.sender_role,
             time: m.created_at,
           };
 
-          // Count only unread incoming messages (from support, not customer)
+          // Count only unread incoming messages from support
           if (m.sender_role !== 'customer' && !m.read_at) {
             unreadMap[m.ticket_id] = (unreadMap[m.ticket_id] || 0) + 1;
           }
@@ -130,7 +128,7 @@ export default function SupportPage() {
   useEffect(() => { loadTickets(); }, [loadTickets]);
   useRealtimeRefresh(['support_tickets' as any, 'support_messages' as any], loadTickets, 'customer-chat-sync');
 
-  // Deep-link: auto-open from ?ticket= or ?new= param
+  // Deep-link: auto-open from query params
   useEffect(() => {
     if (deepLinkedRef.current || loading) return;
     if (searchParams.get('new') === 'true') {
@@ -160,7 +158,7 @@ export default function SupportPage() {
       if (error) throw error;
       setMessages((data || []) as Message[]);
 
-      // Mark incoming messages as read
+      // Mark support messages as read
       await supabase
         .from('support_messages')
         .update({ read_at: new Date().toISOString() } as any)
@@ -168,7 +166,7 @@ export default function SupportPage() {
         .neq('sender_role', 'customer')
         .is('read_at', null);
 
-      // Instantly remove badge on customer screen
+      // Instantly clear unread count badge in UI
       setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, unread_count: 0 } : t));
     } catch {
       // silent
@@ -192,7 +190,7 @@ export default function SupportPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Real-time messages for active chat
+  // Real-time messages for open chat
   useEffect(() => {
     if (!selectedTicket) return;
     const channel = supabase
@@ -268,48 +266,55 @@ export default function SupportPage() {
 
   return (
     <CustomerLayout>
-      <div className="space-y-4 max-w-7xl mx-auto pb-6">
-        {/* Top Header */}
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-foreground">Messages</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">Direct chat with customer support</p>
-          </div>
-          <Button
-            onClick={() => setCreateOpen(true)}
-            className="gap-2 h-9 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
-          >
-            <Plus className="w-4 h-4" /> Start New Chat
-          </Button>
-        </div>
+      {/* Outer Studio Container with soft periwinkle atmosphere */}
+      <div className="max-w-7xl mx-auto pb-8 pt-2">
+        {/* 2-Column Floating Cards Layout matching image-199 */}
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+          
+          {/* ══════════════════════════════════════════════════════
+              LEFT CARD: Conversation List
+             ══════════════════════════════════════════════════════ */}
+          <div className={`${selectedTicket ? 'hidden lg:block' : 'block'} bg-white dark:bg-card rounded-[28px] p-5 shadow-sm border border-slate-200/70 dark:border-border/60 lg:sticky lg:top-20`}>
+            {/* Header: Title + Circular New Chat Button */}
+            <div className="flex items-center justify-between gap-3 mb-5 px-1">
+              <h1 className="text-2xl font-bold font-display tracking-tight text-[#1E293B] dark:text-foreground">
+                Messages
+              </h1>
+              <Button
+                onClick={() => setCreateOpen(true)}
+                size="icon"
+                className="h-10 w-10 rounded-full bg-[#1E3A8A] hover:bg-[#1e40af] text-white shadow-md hover:scale-105 transition-transform"
+                title="Start New Chat"
+              >
+                <Plus className="w-5 h-5" />
+              </Button>
+            </div>
 
-        {/* Responsive 2-Column Split Interface */}
-        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 items-start">
-          {/* Left Column: All Conversations (Always visible on Desktop) */}
-          <div className={`${selectedTicket ? 'hidden lg:block' : 'block'} space-y-2.5 lg:sticky lg:top-20`}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            {/* Search Bar */}
+            <div className="relative mb-4">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <Input
                 placeholder="Search conversations..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-9 h-10 text-xs rounded-xl bg-card border-border/60"
+                className="pl-10 h-11 text-xs rounded-2xl bg-slate-50 dark:bg-muted/40 border-slate-200/60 dark:border-border/50 text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-1 focus-visible:ring-blue-500"
               />
             </div>
 
+            {/* Conversation List */}
             {loading ? (
-              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
             ) : visibleTickets.length === 0 ? (
-              <div className="text-center py-12 rounded-2xl border border-dashed border-border/70 p-6 bg-card/40">
-                <MessageSquare className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
+              <div className="text-center py-12 rounded-2xl border border-dashed border-slate-200 dark:border-border/60 p-6 bg-slate-50/50 dark:bg-card/40">
+                <MessageSquare className="w-10 h-10 mx-auto text-slate-300 dark:text-muted-foreground/30 mb-2" />
                 <p className="text-sm font-semibold text-foreground">No conversations yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Need help with an order or account? Send us a message.</p>
-                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
+                <p className="text-xs text-muted-foreground mt-1">Need help with an order or account? Start a chat.</p>
+                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-[#1E3A8A] text-white">
                   <Plus className="w-3.5 h-3.5" /> Start Chat
                 </Button>
               </div>
             ) : (
-              <div className="space-y-1.5 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto lg:pr-1">
+              <div className="space-y-1 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto lg:pr-1">
                 {visibleTickets.map(t => {
                   const active = selectedTicket?.id === t.id;
                   const initial = t.subject ? t.subject.slice(0, 1).toUpperCase() : 'S';
@@ -320,43 +325,39 @@ export default function SupportPage() {
                     <button
                       key={t.id}
                       onClick={() => openTicket(t)}
-                      className={`w-full text-left rounded-2xl border p-3.5 transition-all flex items-center gap-3.5 ${
+                      className={`w-full text-left rounded-2xl p-3.5 transition-all flex items-center gap-3.5 ${
                         active
-                          ? 'border-emerald-500/50 bg-emerald-500/10 shadow-xs ring-1 ring-emerald-500/20'
-                          : unread
-                          ? 'border-emerald-500/40 bg-card shadow-xs'
-                          : 'border-border/50 bg-card hover:bg-muted/40'
+                          ? 'bg-slate-100 dark:bg-muted shadow-xs'
+                          : 'hover:bg-slate-50 dark:hover:bg-muted/40'
                       }`}
                     >
-                      {/* Avatar */}
+                      {/* Avatar with Online Green Dot */}
                       <div className="relative shrink-0">
-                        <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm ${
-                          active
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-emerald-500/10 text-emerald-600'
-                        }`}>
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#3b82f6] to-[#60a5fa] text-white flex items-center justify-center font-bold text-sm shadow-sm">
                           {initial}
                         </div>
+                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-card" />
                       </div>
 
                       {/* Info & Dynamic Latest Message */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1 mb-1">
-                          <p className={`text-xs truncate ${unread ? 'font-bold text-foreground' : 'font-semibold text-foreground/90'}`}>
-                            {t.subject || 'Support Conversation'}
+                          <p className={`text-xs truncate ${unread ? 'font-bold text-[#0f172a] dark:text-foreground' : 'font-semibold text-slate-800 dark:text-foreground/90'}`}>
+                            {t.subject || 'Support Team'}
                           </p>
-                          <span className={`text-[10px] shrink-0 ${unread ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-muted-foreground/60'}`}>
+                          <span className={`text-[10px] shrink-0 ${unread ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
                             {t.latest_message_time ? formatDistanceToNow(new Date(t.latest_message_time), { addSuffix: true }) : ''}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
-                          <p className={`text-[11px] truncate ${unread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
-                            {isYou ? <span className="opacity-70">You: </span> : null}
+                          <p className={`text-[11px] truncate leading-tight ${unread ? 'font-medium text-slate-900 dark:text-foreground' : 'text-slate-500 dark:text-muted-foreground'}`}>
+                            {isYou ? <span className="opacity-60">You: </span> : null}
                             {t.latest_message || t.message}
                           </p>
-                          {/* ONLY show counter badge when there are unread incoming messages */}
+
+                          {/* Coral Red Unread Pill matching image-199 */}
                           {unread && (
-                            <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-xs">
+                            <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-[#EA384D] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-xs">
                               {t.unread_count}
                             </span>
                           )}
@@ -369,90 +370,93 @@ export default function SupportPage() {
             )}
           </div>
 
-          {/* Right Column: Chat Window on Desktop / Full Screen on Mobile */}
+          {/* ══════════════════════════════════════════════════════
+              RIGHT CARD: Chat Room
+             ══════════════════════════════════════════════════════ */}
           <div className={selectedTicket ? 'block' : 'hidden lg:block'}>
             {selectedTicket ? (
-              <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden flex flex-col h-[78vh] min-h-[520px]">
-                {/* Header */}
-                <div className="px-4 py-3 border-b border-border/50 bg-muted/20 flex items-center justify-between gap-3 shrink-0">
-                  <div className="flex items-center gap-2.5 min-w-0">
+              <div className="bg-white dark:bg-card rounded-[28px] shadow-sm border border-slate-200/70 dark:border-border/60 overflow-hidden flex flex-col h-[82vh] min-h-[560px]">
+                
+                {/* Curved Soft Periwinkle Header Bar matching image-199 */}
+                <div className="px-5 py-4 bg-[#B8C5E6] dark:bg-slate-800 text-[#1E293B] dark:text-foreground flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-3 min-w-0">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => { setSelectedTicket(null); setMessages([]); }}
-                      className="h-8 w-8 rounded-lg lg:hidden"
+                      className="h-8 w-8 rounded-full hover:bg-black/10 lg:hidden text-inherit"
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </Button>
-                    <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
-                      S
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-white/80 dark:bg-white/10 text-blue-900 dark:text-blue-200 flex items-center justify-center font-bold text-xs shadow-xs">
+                        S
+                      </div>
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold text-foreground truncate">{selectedTicket.subject}</p>
-                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Customer Support Team</p>
+                      <p className="text-sm font-bold text-[#1E293B] dark:text-foreground truncate">{selectedTicket.subject}</p>
+                      <p className="text-[11px] text-[#475569] dark:text-slate-300 font-medium">Customer Support · Active now</p>
                     </div>
                   </div>
 
                   {relatedOrderShortId && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground shrink-0">
-                      <Receipt className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Order #{relatedOrderShortId}</span>
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 dark:bg-slate-700/70 text-[11px] font-mono text-slate-800 dark:text-slate-200 shadow-xs shrink-0">
+                      <Receipt className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                      <span>#{relatedOrderShortId}</span>
                     </div>
                   )}
                 </div>
 
-                {/* Messages Body */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/60 dark:bg-muted/10">
-                  {/* Initial Message from Ticket Creation */}
-                  <div className="flex justify-end gap-2 items-end">
-                    <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
-                      <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#0f172a] dark:bg-blue-600 text-white shadow-xs">
-                        <p className="text-xs whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
-                        <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-white/60">
-                          <span>{format(new Date(selectedTicket.created_at), 'h:mm a')}</span>
-                          <CheckCheck className="w-3 h-3 text-emerald-400" />
-                        </div>
-                      </div>
+                {/* Messages Body (Clean White Surface with Pastel Bubbles) */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-white dark:bg-card">
+                  {/* First Message from Creation (Outgoing: Warm Off-White Bubble) */}
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="max-w-[82%] sm:max-w-[68%] rounded-2xl rounded-br-xs px-4 py-3 bg-[#F8FAFC] dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 border border-slate-200/70 dark:border-slate-700 shadow-xs">
+                      <p className="text-xs whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
                     </div>
+                    <span className="text-[10px] text-slate-400 pr-1">
+                      {format(new Date(selectedTicket.created_at), 'h:mm a')}
+                    </span>
                   </div>
 
                   {/* Thread Replies */}
                   {messagesLoading ? (
-                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>
                   ) : (
                     messages.map(m => {
                       const isCustomer = m.sender_role === 'customer';
+
+                      // Customer message (Outgoing on the Right: Warm Off-White)
                       if (isCustomer) {
                         return (
-                          <div key={m.id} className="flex justify-end gap-2 items-end">
-                            <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
-                              <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#0f172a] dark:bg-blue-600 text-white shadow-xs">
-                                {m.attachment_url && (
-                                  <div className="mb-2 p-1 rounded-lg bg-white/10">
-                                    <AttachmentRenderer url={m.attachment_url} />
-                                  </div>
-                                )}
-                                {m.message && m.message !== '[Attachment]' && (
-                                  <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
-                                )}
-                                <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-white/60">
-                                  <span>{format(new Date(m.created_at), 'h:mm a')}</span>
-                                  <CheckCheck className={`w-3 h-3 ${m.read_at ? 'text-emerald-400' : 'text-white/40'}`} />
+                          <div key={m.id} className="flex flex-col items-end gap-1">
+                            <div className="max-w-[82%] sm:max-w-[68%] rounded-2xl rounded-br-xs px-4 py-3 bg-[#F8FAFC] dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 border border-slate-200/70 dark:border-slate-700 shadow-xs">
+                              {m.attachment_url && (
+                                <div className="mb-2 p-1.5 rounded-xl bg-slate-100 dark:bg-slate-700">
+                                  <AttachmentRenderer url={m.attachment_url} />
                                 </div>
-                              </div>
+                              )}
+                              {m.message && m.message !== '[Attachment]' && (
+                                <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                              )}
                             </div>
+                            <span className="text-[10px] text-slate-400 pr-1">
+                              {format(new Date(m.created_at), 'h:mm a')}
+                            </span>
                           </div>
                         );
                       }
 
-                      // Support incoming message
+                      // Support reply (Incoming on the Left: Pastel Periwinkle-Blue Bubble matching image-199)
                       return (
-                        <div key={m.id} className="flex justify-start gap-2 items-end">
-                          <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-[9px] shrink-0 mb-2">
+                        <div key={m.id} className="flex items-start gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-[#B8C5E6] text-blue-900 flex items-center justify-center font-bold text-[10px] shrink-0 mt-1">
                             S
                           </div>
-                          <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
-                            <div className="rounded-2xl rounded-bl-xs px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200/90 dark:border-slate-700/80 shadow-xs">
+                          <div className="max-w-[82%] sm:max-w-[68%] space-y-1">
+                            <span className="text-[10px] text-slate-400 pl-1 font-medium">Support</span>
+                            <div className="rounded-2xl rounded-tl-xs px-4 py-3 bg-[#EBF2FE] dark:bg-slate-800 text-[#1E293B] dark:text-slate-100 border border-blue-100 dark:border-slate-700/60 shadow-xs">
                               {m.attachment_url && (
                                 <div className="mb-2">
                                   <AttachmentRenderer url={m.attachment_url} />
@@ -461,10 +465,10 @@ export default function SupportPage() {
                               {m.message && m.message !== '[Attachment]' && (
                                 <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
                               )}
-                              <p className="text-[9px] text-muted-foreground/60 mt-1">
-                                {format(new Date(m.created_at), 'h:mm a')}
-                              </p>
                             </div>
+                            <span className="text-[10px] text-slate-400 pl-1 block">
+                              {format(new Date(m.created_at), 'h:mm a')}
+                            </span>
                           </div>
                         </div>
                       );
@@ -473,10 +477,10 @@ export default function SupportPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Composer */}
-                <div className="p-3 border-t border-border/50 bg-card shrink-0">
+                {/* Minimalist Floating Composer matching image-199 */}
+                <div className="p-4 bg-white dark:bg-card border-t border-slate-100 dark:border-border/60 shrink-0">
                   {attachment && (
-                    <div className="flex items-center justify-between mb-2 px-3 py-1.5 rounded-xl bg-muted/60 text-xs">
+                    <div className="flex items-center justify-between mb-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-muted text-xs">
                       <span className="truncate max-w-[260px] text-muted-foreground">{attachment.name}</span>
                       <button type="button" onClick={() => setAttachment(null)} className="text-destructive">
                         <X className="w-3.5 h-3.5" />
@@ -485,7 +489,7 @@ export default function SupportPage() {
                   )}
                   <form
                     onSubmit={(e) => { e.preventDefault(); sendReply(); }}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 bg-slate-50 dark:bg-muted/40 rounded-full px-3 py-1.5 border border-slate-200/60 dark:border-border/60"
                   >
                     <input
                       type="file"
@@ -499,7 +503,7 @@ export default function SupportPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => fileInputRef.current?.click()}
-                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground shrink-0"
+                      className="h-8 w-8 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-foreground shrink-0"
                     >
                       <Paperclip className="w-4 h-4" />
                     </Button>
@@ -507,29 +511,29 @@ export default function SupportPage() {
                       placeholder="Type a message..."
                       value={replyText}
                       onChange={e => setReplyText(e.target.value)}
-                      className="h-10 text-xs rounded-xl bg-muted/30 border-border/60"
+                      className="h-9 text-xs bg-transparent border-none shadow-none focus-visible:ring-0 px-2"
                     />
                     <Button
                       type="submit"
                       disabled={sending || (!replyText.trim() && !attachment)}
                       size="icon"
-                      className="h-10 w-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs"
+                      className="h-8 w-8 rounded-full bg-[#3B82F6] hover:bg-blue-600 text-white shrink-0 shadow-sm transition-transform hover:scale-105"
                     >
-                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                     </Button>
                   </form>
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 p-12 text-center bg-card/40 flex flex-col items-center justify-center min-h-[500px]">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
+              <div className="bg-white dark:bg-card rounded-[28px] border border-slate-200/70 dark:border-border/60 p-12 text-center flex flex-col items-center justify-center min-h-[560px] shadow-sm">
+                <div className="w-16 h-16 rounded-full bg-[#EBF2FE] dark:bg-slate-800 text-[#3B82F6] flex items-center justify-center mb-4">
                   <MessageSquare className="w-7 h-7" />
                 </div>
-                <h3 className="text-sm font-semibold text-foreground">Select a conversation</h3>
+                <h3 className="text-base font-bold text-foreground">Select a conversation</h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
                   Choose a chat on the left to read and reply, or start a new conversation.
                 </p>
-                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-5 gap-2 text-xs rounded-full px-5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white shadow-sm">
                   <Plus className="w-3.5 h-3.5" /> Start New Chat
                 </Button>
               </div>
