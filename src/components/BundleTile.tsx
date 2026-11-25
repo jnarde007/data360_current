@@ -20,17 +20,17 @@ export function BundleTile({
   const isMTN = network === 'MTN';
   const isTelecel = network === 'Telecel';
 
-  // 1. OUT OF STOCK STATE — Clean muted grey card with strikethrough
+  // 1. OUT OF STOCK STATE — Defined card boundary, soft surface, distinct presence
   if (!isAvailable) {
     return (
       <div
         role="button"
         aria-disabled="true"
-        className="relative overflow-hidden flex flex-col items-center justify-center gap-1 min-h-[88px] rounded-2xl p-3 bg-muted/60 border border-dashed border-border/70 opacity-55 cursor-not-allowed select-none text-center"
+        className="relative overflow-hidden flex flex-col items-center justify-center gap-1 min-h-[88px] rounded-2xl p-3 bg-slate-100/90 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 shadow-xs cursor-not-allowed select-none text-center"
       >
-        <span className="text-sm font-bold text-muted-foreground">{size}</span>
-        <span className="text-xs font-medium text-muted-foreground line-through">{price}</span>
-        <span className="mt-0.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-destructive/15 text-destructive border border-destructive/20">
+        <span className="text-sm font-bold text-slate-700 dark:text-slate-300 leading-none">{size}</span>
+        <span className="text-xs font-semibold text-slate-400 line-through leading-none mt-0.5">{price}</span>
+        <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60">
           Out of stock
         </span>
       </div>
