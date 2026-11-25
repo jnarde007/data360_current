@@ -237,140 +237,144 @@ export default function SupportPage() {
     const canReply = selectedTicket.status !== 'closed';
 
     threadView = (
-        <div className="space-y-5">
-          {/* Back button */}
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedTicket(null); setMessages([]); setRelatedOrderShortId(null); }} className="gap-1.5 -ml-2 lg:hidden">
-            <ArrowLeft className="w-4 h-4" /> Back to Tickets
-          </Button>
-
-          {/* ── Ticket Header Card ── */}
-          <Card className="overflow-hidden border-border/50">
-            <CardContent className="p-0">
-              {/* Accent bar */}
-              <div className="h-1 bg-gradient-to-r from-primary/60 via-primary/30 to-transparent" />
-
-              {/* Subject row */}
-              <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
+        <div className="space-y-4">
+          {/* ── Compact Ticket Header Bar ── */}
+          <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-3.5 sm:p-4 shadow-sm space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => { setSelectedTicket(null); setMessages([]); setRelatedOrderShortId(null); }}
+                  className="h-8 w-8 shrink-0 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+                  title="Back to Tickets"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium mb-1">Subject</p>
-                  <h1 className="text-base lg:text-lg font-display font-bold text-foreground leading-snug">{selectedTicket.subject}</h1>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                      #{selectedTicket.short_id}
+                    </span>
+                    <h1 className="text-sm sm:text-base font-semibold text-foreground truncate">{selectedTicket.subject}</h1>
+                  </div>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <StatusBadge status={selectedTicket.status} />
                 {canReopen && (
-                  <Button variant="outline" size="sm" onClick={reopenTicket} className="shrink-0 text-xs mt-3">Reopen</Button>
+                  <Button variant="outline" size="sm" onClick={reopenTicket} className="h-7 text-xs px-2.5">
+                    Reopen
+                  </Button>
                 )}
               </div>
-
-              {/* Divider */}
-              <div className="mx-5 border-t border-border/30" />
-
-              {/* Metadata grid */}
-              <div className="px-5 py-3.5 grid grid-cols-2 sm:grid-cols-4 gap-y-3 gap-x-4">
-                <div className="space-y-0.5">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium flex items-center gap-1">
-                    <Hash className="w-3 h-3" /> Ticket No.
-                  </p>
-                  <p className="text-xs font-mono font-bold text-foreground">{selectedTicket.short_id}</p>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium flex items-center gap-1">
-                    <Layers className="w-3 h-3" /> Status
-                  </p>
-                  <StatusBadge status={selectedTicket.status} />
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Priority
-                  </p>
-                  <Badge variant="outline" className={`text-[10px] capitalize ${priorityColors[selectedTicket.priority]}`}>
-                    {selectedTicket.priority}
-                  </Badge>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium flex items-center gap-1">
-                    <Tag className="w-3 h-3" /> Category
-                  </p>
-                  <Badge variant="secondary" className="text-[10px]">{selectedTicket.category}</Badge>
-                </div>
-              </div>
-
-              {/* Context references */}
-              {(relatedOrderShortId || selectedTicket.related_wallet_transaction_id) && (
-                <>
-                  <div className="mx-5 border-t border-border/30" />
-                  <div className="px-5 py-3 flex items-center gap-2 flex-wrap">
-                    {relatedOrderShortId && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/5 text-primary border border-primary/10 text-[11px] font-semibold">
-                        🧾 Order: {relatedOrderShortId}
-                      </span>
-                    )}
-                    {selectedTicket.related_wallet_transaction_id && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/5 text-primary border border-primary/10 text-[11px] font-semibold">
-                        💳 Wallet Transaction
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* ── Initial Message ── */}
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 w-8 h-8 rounded-full bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shadow-sm">
-              <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Y</span>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold text-foreground">You</span>
-                <span className="text-[10px] text-muted-foreground/60">
-                  {format(new Date(selectedTicket.created_at), 'dd MMM yyyy, h:mm a')}
+
+            {/* Tags / Meta inline row */}
+            <div className="flex items-center gap-2 flex-wrap text-xs pt-2 border-t border-border/40">
+              <Badge variant="outline" className={`text-[10px] capitalize ${priorityColors[selectedTicket.priority]}`}>
+                {selectedTicket.priority} Priority
+              </Badge>
+              <Badge variant="secondary" className="text-[10px]">
+                {selectedTicket.category}
+              </Badge>
+              {relatedOrderShortId && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/5 text-primary border border-primary/15 text-[10px] font-mono font-medium">
+                  🧾 Order: #{relatedOrderShortId}
                 </span>
-              </div>
-              <div className="rounded-2xl rounded-tl-sm px-4 py-3 bg-blue-500/[0.08] border border-blue-500/15 max-w-[88%] shadow-sm">
-                <p className="text-[13px] text-foreground whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
-              </div>
+              )}
+              {selectedTicket.related_wallet_transaction_id && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/5 text-primary border border-primary/15 text-[10px] font-mono font-medium">
+                  💳 Wallet Txn
+                </span>
+              )}
+              <span className="ml-auto text-[10px] text-muted-foreground/60 hidden sm:inline">
+                {format(new Date(selectedTicket.created_at), 'dd MMM yyyy, h:mm a')}
+              </span>
             </div>
           </div>
 
-          {/* ── Messages Thread ── */}
-          <div className="space-y-5">
+          {/* ── Chat Messages Stream ── */}
+          <div className="space-y-4 pt-2 pb-1">
+            {/* Initial customer message (outgoing on right for customer) */}
+            <div className="flex justify-end gap-2.5 items-end">
+              <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
+                <div className="flex items-center justify-end gap-2 px-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">You</span>
+                  <span className="text-[10px] text-muted-foreground/50">
+                    {format(new Date(selectedTicket.created_at), 'dd MMM, h:mm a')}
+                  </span>
+                </div>
+                <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-blue-600 text-white shadow-sm">
+                  <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
+                </div>
+              </div>
+              <div className="shrink-0 w-7 h-7 rounded-full bg-blue-600/15 border border-blue-500/25 flex items-center justify-center shadow-sm">
+                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">Y</span>
+              </div>
+            </div>
+
+            {/* Replies Thread */}
             {messagesLoading ? (
-              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+              <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
             ) : messages.length === 0 ? (
-              <p className="text-xs text-muted-foreground/50 text-center py-8">No replies yet — our team will respond soon.</p>
+              <div className="text-center py-6">
+                <p className="text-xs text-muted-foreground/50">Our support team has received your ticket and will respond soon.</p>
+              </div>
             ) : (
               messages.map(m => {
                 const isCustomer = m.sender_role === 'customer';
                 const senderLabel = isCustomer ? 'You' : 'Support';
                 const avatarLetter = isCustomer ? 'Y' : 'S';
-                return (
-                  <div key={m.id} className="flex items-start gap-3">
-                    <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${
-                      isCustomer
-                        ? 'bg-blue-500/15 border border-blue-500/25'
-                        : 'bg-muted border border-border/60'
-                    }`}>
-                      <span className={`text-[11px] font-bold ${isCustomer ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}`}>{avatarLetter}</span>
+
+                if (isCustomer) {
+                  return (
+                    <div key={m.id} className="flex justify-end gap-2.5 items-end">
+                      <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
+                        <div className="flex items-center justify-end gap-2 px-1">
+                          <span className="text-[11px] font-medium text-muted-foreground">{senderLabel}</span>
+                          <span className="text-[10px] text-muted-foreground/50">
+                            {format(new Date(m.created_at), 'h:mm a')}
+                          </span>
+                        </div>
+                        <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-blue-600 text-white shadow-sm">
+                          {m.attachment_url && (
+                            <div className="mb-2 p-1.5 rounded-lg bg-white/10 backdrop-blur-xs">
+                              <AttachmentRenderer url={m.attachment_url} />
+                            </div>
+                          )}
+                          {m.message && m.message !== '[Attachment]' && (
+                            <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="shrink-0 w-7 h-7 rounded-full bg-blue-600/15 border border-blue-500/25 flex items-center justify-center shadow-sm">
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">{avatarLetter}</span>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-semibold ${isCustomer ? 'text-foreground' : 'text-muted-foreground'}`}>{senderLabel}</span>
+                  );
+                }
+
+                return (
+                  <div key={m.id} className="flex justify-start gap-2.5 items-end">
+                    <div className="shrink-0 w-7 h-7 rounded-full bg-muted border border-border/70 flex items-center justify-center shadow-sm">
+                      <span className="text-[10px] font-bold text-muted-foreground">{avatarLetter}</span>
+                    </div>
+                    <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-[11px] font-medium text-foreground">{senderLabel}</span>
                         <span className="text-[10px] text-muted-foreground/50">
                           {format(new Date(m.created_at), 'h:mm a')}
                         </span>
                       </div>
-                      <div className={`rounded-2xl px-4 py-3 max-w-[88%] shadow-sm ${
-                        isCustomer
-                          ? 'rounded-tl-sm bg-blue-500/[0.08] border border-blue-500/15'
-                          : 'rounded-tl-sm bg-muted/80 border border-border/40'
-                      }`}>
+                      <div className="rounded-2xl rounded-bl-xs px-4 py-2.5 bg-slate-100 dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/60 shadow-sm">
                         {m.attachment_url && (
-                          <div className="mb-2.5">
+                          <div className="mb-2">
                             <AttachmentRenderer url={m.attachment_url} />
                           </div>
                         )}
                         {m.message && m.message !== '[Attachment]' && (
-                          <p className="text-[13px] text-foreground whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                          <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{m.message}</p>
                         )}
                       </div>
                     </div>
