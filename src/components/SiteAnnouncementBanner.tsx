@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, Info, AlertCircle } from "lucide-react";
+import { AlertTriangle, Info, AlertCircle, Eye } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -67,31 +67,31 @@ export function SiteAnnouncementBanner() {
 
   const themeStyles = {
     warning: {
-      bar: "bg-amber-500 text-amber-950 border-amber-600/30",
-      badge: "bg-amber-950 text-amber-100 border-amber-900",
+      bar: "bg-amber-400 dark:bg-amber-500 text-slate-950 border-amber-600/30",
+      badge: "bg-slate-950 text-amber-300 border-amber-400/40",
       dot: "bg-amber-300",
-      icon: <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-950" />,
+      tapBadge: "bg-slate-950/15 text-slate-950 border-slate-950/20",
       dialogBorder: "border-amber-500/30",
     },
     destructive: {
       bar: "bg-rose-600 text-white border-rose-700/40",
-      badge: "bg-black/40 text-white border-white/20",
+      badge: "bg-black/50 text-white border-white/30",
       dot: "bg-rose-300",
-      icon: <AlertCircle className="w-3.5 h-3.5 shrink-0 text-white" />,
+      tapBadge: "bg-black/20 text-white border-white/20",
       dialogBorder: "border-rose-500/30",
     },
     info: {
       bar: "bg-blue-600 text-white border-blue-700/40",
-      badge: "bg-black/30 text-white border-white/20",
+      badge: "bg-black/40 text-white border-white/30",
       dot: "bg-blue-200",
-      icon: <Info className="w-3.5 h-3.5 shrink-0 text-white" />,
+      tapBadge: "bg-black/20 text-white border-white/20",
       dialogBorder: "border-blue-500/30",
     },
   }[data.type] || {
-    bar: "bg-amber-500 text-amber-950 border-amber-600/30",
-    badge: "bg-amber-950 text-amber-100 border-amber-900",
+    bar: "bg-amber-400 dark:bg-amber-500 text-slate-950 border-amber-600/30",
+    badge: "bg-slate-950 text-amber-300 border-amber-400/40",
     dot: "bg-amber-300",
-    icon: <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-950" />,
+    tapBadge: "bg-slate-950/15 text-slate-950 border-slate-950/20",
     dialogBorder: "border-amber-500/30",
   };
 
@@ -101,44 +101,49 @@ export function SiteAnnouncementBanner() {
         role="region"
         aria-label="Site announcement"
         onClick={() => setIsDialogOpen(true)}
-        className={`w-full h-9 px-2 sm:px-4 flex items-center justify-between overflow-hidden cursor-pointer select-none text-xs font-medium border-b shadow-sm relative z-40 transition-colors ${themeStyles.bar}`}
-        title="Click to view full message"
+        className={`w-full h-11 sm:h-12 px-3 sm:px-5 flex items-center justify-between overflow-hidden cursor-pointer select-none border-b shadow-sm relative z-40 transition-colors antialiased ${themeStyles.bar}`}
+        title="Tap to read full announcement"
       >
-        <div className="flex items-center gap-1.5 shrink-0 z-10 pr-2.5 mr-2 border-r border-black/10">
-          <span className="relative flex h-2 w-2">
+        {/* Left pinned pill badge */}
+        <div className="flex items-center gap-2 shrink-0 z-10 pr-3 mr-2 sm:mr-3 border-r border-black/15">
+          <span className="relative flex h-2.5 w-2.5">
             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${themeStyles.dot}`}></span>
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${themeStyles.dot}`}></span>
+            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${themeStyles.dot}`}></span>
           </span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border shadow-xs ${themeStyles.badge}`}>
+          <span className={`px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-black tracking-wider uppercase border shadow-xs ${themeStyles.badge}`}>
             {data.title || "NOTICE"}
           </span>
         </div>
 
+        {/* Marquee scrolling track with clear typography */}
         <div className="flex-1 overflow-hidden relative h-full flex items-center">
-          <div className="animate-ticker-marquee text-xs font-semibold tracking-wide">
-            <span className="inline-block px-4">{data.message}</span>
-            <span className="inline-block px-4 opacity-50">★</span>
-            <span className="inline-block px-4">{data.message}</span>
+          <div className="animate-ticker-marquee text-[13px] sm:text-sm font-bold tracking-normal leading-normal">
+            <span className="inline-block px-6">{data.message}</span>
+            <span className="inline-block px-6 opacity-40 font-normal">◆</span>
+            <span className="inline-block px-6">{data.message}</span>
           </div>
         </div>
 
-        <div className="shrink-0 z-10 pl-2 hidden sm:flex items-center text-[10px] font-bold uppercase tracking-wider opacity-80">
-          Tap to view
+        {/* Right indicator */}
+        <div className={`shrink-0 z-10 ml-2 hidden sm:flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold uppercase tracking-wider border ${themeStyles.tapBadge}`}>
+          <Eye className="w-3 h-3" />
+          <span>Tap to read</span>
         </div>
       </aside>
 
+      {/* Tap-to-read Modal Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className={`max-w-md border ${themeStyles.dialogBorder} p-6`}>
-          <DialogHeader className="space-y-2">
+          <DialogHeader className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${themeStyles.badge}`}>
+              <span className={`px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider ${themeStyles.badge}`}>
                 {data.title || "ANNOUNCEMENT"}
               </span>
             </div>
-            <DialogTitle className="text-lg font-bold text-foreground">
+            <DialogTitle className="text-xl font-bold text-foreground">
               {data.title}
             </DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap pt-2">
+            <DialogDescription className="text-sm sm:text-base leading-relaxed text-foreground/90 whitespace-pre-wrap pt-2">
               {data.message}
             </DialogDescription>
           </DialogHeader>
