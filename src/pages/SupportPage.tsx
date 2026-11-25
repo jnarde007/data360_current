@@ -27,6 +27,9 @@ interface Ticket {
   updated_at: string;
   related_order_id: string | null;
   related_wallet_transaction_id: string | null;
+  latest_message?: string;
+  latest_sender_role?: string;
+  latest_message_time?: string;
   unread_count?: number;
 }
 
@@ -61,7 +64,7 @@ export default function SupportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deepLinkedRef = useRef(false);
 
-  // Load conversations and compute real unread counts
+  // Load conversations with real latest message preview & unread counts
   const loadTickets = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -76,20 +79,43 @@ export default function SupportPage() {
 
       if (list.length > 0) {
         const ticketIds = list.map(t => t.id);
-        const { data: unreadData } = await supabase
-          .from('support_messages')
-          .select('ticket_id')
-          .in('ticket_id', ticketIds)
-          .neq('sender_role', 'customer')
-          .is('read_at', null);
 
-        const countMap: Record<string, number> = {};
-        (unreadData || []).forEach((m: any) => {
-          countMap[m.ticket_id] = (countMap[m.ticket_id] || 0) + 1;
+        // Fetch messages for these tickets
+        const { data: allMsgs } = await supabase
+          .from('support_messages')
+          .select('ticket_id, sender_role, message, created_at, read_at')
+          .in('ticket_id', ticketIds)
+          .order('created_at', { ascending: true });
+
+        const unreadMap: Record<string, number> = {};
+        const latestMsgMap: Record<string, { text: string; role: string; time: string }> = {};
+
+        (allMsgs || []).forEach((m: any) => {
+          // Record latest message
+          latestMsgMap[m.ticket_id] = {
+            text: m.message === '[Attachment]' ? '📎 Attachment' : m.message,
+            role: m.sender_role,
+            time: m.created_at,
+          };
+
+          // Count only unread incoming messages (from support, not customer)
+          if (m.sender_role !== 'customer' && !m.read_at) {
+            unreadMap[m.ticket_id] = (unreadMap[m.ticket_id] || 0) + 1;
+          }
         });
 
         list.forEach(t => {
-          t.unread_count = countMap[t.id] || 0;
+          const latest = latestMsgMap[t.id];
+          if (latest) {
+            t.latest_message = latest.text;
+            t.latest_sender_role = latest.role;
+            t.latest_message_time = latest.time;
+          } else {
+            t.latest_message = t.message;
+            t.latest_sender_role = 'customer';
+            t.latest_message_time = t.created_at;
+          }
+          t.unread_count = unreadMap[t.id] || 0;
         });
       }
 
@@ -104,7 +130,7 @@ export default function SupportPage() {
   useEffect(() => { loadTickets(); }, [loadTickets]);
   useRealtimeRefresh(['support_tickets' as any, 'support_messages' as any], loadTickets, 'customer-chat-sync');
 
-  // Deep-link: auto-open ticket from ?ticket= or ?new= param
+  // Deep-link: auto-open from ?ticket= or ?new= param
   useEffect(() => {
     if (deepLinkedRef.current || loading) return;
     if (searchParams.get('new') === 'true') {
@@ -134,7 +160,7 @@ export default function SupportPage() {
       if (error) throw error;
       setMessages((data || []) as Message[]);
 
-      // Mark support messages as read
+      // Mark incoming messages as read
       await supabase
         .from('support_messages')
         .update({ read_at: new Date().toISOString() } as any)
@@ -142,7 +168,7 @@ export default function SupportPage() {
         .neq('sender_role', 'customer')
         .is('read_at', null);
 
-      // Instantly clear local unread badge
+      // Instantly remove badge on customer screen
       setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, unread_count: 0 } : t));
     } catch {
       // silent
@@ -166,11 +192,11 @@ export default function SupportPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Real-time incoming messages
+  // Real-time messages for active chat
   useEffect(() => {
     if (!selectedTicket) return;
     const channel = supabase
-      .channel(`cust-live-${selectedTicket.id}`)
+      .channel(`cust-live-msgs-${selectedTicket.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -237,30 +263,30 @@ export default function SupportPage() {
   const visibleTickets = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return tickets;
-    return tickets.filter(t => t.subject?.toLowerCase().includes(q) || t.message?.toLowerCase().includes(q) || t.short_id?.toLowerCase().includes(q));
+    return tickets.filter(t => t.subject?.toLowerCase().includes(q) || t.latest_message?.toLowerCase().includes(q) || t.short_id?.toLowerCase().includes(q));
   }, [tickets, search]);
 
   return (
     <CustomerLayout>
-      <div className="space-y-4 max-w-5xl mx-auto pb-8">
+      <div className="space-y-4 max-w-7xl mx-auto pb-6">
         {/* Top Header */}
         <div className="flex items-center justify-between gap-3 pt-1">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-foreground">Messages</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">Chat directly with our support team</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Direct chat with customer support</p>
           </div>
           <Button
             onClick={() => setCreateOpen(true)}
-            className="gap-2 h-9 px-3.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+            className="gap-2 h-9 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
           >
             <Plus className="w-4 h-4" /> Start New Chat
           </Button>
         </div>
 
-        {/* 2-Column WhatsApp-Style Interface */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,380px)_1fr] gap-4 items-start">
-          {/* Left Column: Conversations List */}
-          <div className={`${selectedTicket ? 'hidden lg:block' : 'block'} space-y-2 lg:sticky lg:top-24`}>
+        {/* Responsive 2-Column Split Interface */}
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 items-start">
+          {/* Left Column: All Conversations (Always visible on Desktop) */}
+          <div className={`${selectedTicket ? 'hidden lg:block' : 'block'} space-y-2.5 lg:sticky lg:top-20`}>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               <Input
@@ -283,46 +309,54 @@ export default function SupportPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-1.5 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto lg:pr-1">
+              <div className="space-y-1.5 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto lg:pr-1">
                 {visibleTickets.map(t => {
                   const active = selectedTicket?.id === t.id;
                   const initial = t.subject ? t.subject.slice(0, 1).toUpperCase() : 'S';
                   const unread = (t.unread_count || 0) > 0;
+                  const isYou = t.latest_sender_role === 'customer';
+
                   return (
                     <button
                       key={t.id}
                       onClick={() => openTicket(t)}
                       className={`w-full text-left rounded-2xl border p-3.5 transition-all flex items-center gap-3.5 ${
                         active
-                          ? 'border-emerald-500/40 bg-emerald-500/5 shadow-xs'
+                          ? 'border-emerald-500/50 bg-emerald-500/10 shadow-xs ring-1 ring-emerald-500/20'
                           : unread
-                          ? 'border-emerald-500/30 bg-card shadow-xs'
+                          ? 'border-emerald-500/40 bg-card shadow-xs'
                           : 'border-border/50 bg-card hover:bg-muted/40'
                       }`}
                     >
                       {/* Avatar */}
                       <div className="relative shrink-0">
-                        <div className="w-11 h-11 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-sm">
+                        <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm ${
+                          active
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-emerald-500/10 text-emerald-600'
+                        }`}>
                           {initial}
                         </div>
                       </div>
 
-                      {/* Info & Snippet */}
+                      {/* Info & Dynamic Latest Message */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <div className="flex items-center justify-between gap-1 mb-1">
                           <p className={`text-xs truncate ${unread ? 'font-bold text-foreground' : 'font-semibold text-foreground/90'}`}>
                             {t.subject || 'Support Conversation'}
                           </p>
-                          <span className={`text-[10px] shrink-0 ${unread ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-muted-foreground/60'}`}>
-                            {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true })}
+                          <span className={`text-[10px] shrink-0 ${unread ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-muted-foreground/60'}`}>
+                            {t.latest_message_time ? formatDistanceToNow(new Date(t.latest_message_time), { addSuffix: true }) : ''}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <p className={`text-[11px] truncate ${unread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
-                            {t.message}
+                            {isYou ? <span className="opacity-70">You: </span> : null}
+                            {t.latest_message || t.message}
                           </p>
+                          {/* ONLY show counter badge when there are unread incoming messages */}
                           {unread && (
-                            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-xs">
+                            <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-xs">
                               {t.unread_count}
                             </span>
                           )}
@@ -335,10 +369,10 @@ export default function SupportPage() {
             )}
           </div>
 
-          {/* Right Column: Active Conversation */}
+          {/* Right Column: Chat Window on Desktop / Full Screen on Mobile */}
           <div className={selectedTicket ? 'block' : 'hidden lg:block'}>
             {selectedTicket ? (
-              <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden flex flex-col h-[75vh] min-h-[500px]">
+              <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden flex flex-col h-[78vh] min-h-[520px]">
                 {/* Header */}
                 <div className="px-4 py-3 border-b border-border/50 bg-muted/20 flex items-center justify-between gap-3 shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -350,12 +384,12 @@ export default function SupportPage() {
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </Button>
-                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
                       S
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate">{selectedTicket.subject}</p>
-                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Customer Support</p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Customer Support Team</p>
                     </div>
                   </div>
 
@@ -368,8 +402,8 @@ export default function SupportPage() {
                 </div>
 
                 {/* Messages Body */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/50 dark:bg-muted/10">
-                  {/* First Message from creation (Outgoing) */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/60 dark:bg-muted/10">
+                  {/* Initial Message from Ticket Creation */}
                   <div className="flex justify-end gap-2 items-end">
                     <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
                       <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#0f172a] dark:bg-blue-600 text-white shadow-xs">
@@ -411,7 +445,7 @@ export default function SupportPage() {
                         );
                       }
 
-                      // Support reply on the left
+                      // Support incoming message
                       return (
                         <div key={m.id} className="flex justify-start gap-2 items-end">
                           <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-[9px] shrink-0 mb-2">
@@ -487,13 +521,13 @@ export default function SupportPage() {
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 p-12 text-center bg-card/40 flex flex-col items-center justify-center min-h-[420px]">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
-                  <MessageSquare className="w-6 h-6" />
+              <div className="rounded-2xl border border-dashed border-border/70 p-12 text-center bg-card/40 flex flex-col items-center justify-center min-h-[500px]">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
+                  <MessageSquare className="w-7 h-7" />
                 </div>
                 <h3 className="text-sm font-semibold text-foreground">Select a conversation</h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  Choose a chat on the left to read messages and reply, or start a new conversation.
+                  Choose a chat on the left to read and reply, or start a new conversation.
                 </p>
                 <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
                   <Plus className="w-3.5 h-3.5" /> Start New Chat
