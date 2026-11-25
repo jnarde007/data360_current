@@ -1,17 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Loader2, MessageSquare, Paperclip, X, Receipt } from 'lucide-react';
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+import { Loader2, Paperclip, Headphones } from 'lucide-react';
 
 interface CreateTicketDialogProps {
   open: boolean;
@@ -34,100 +30,88 @@ export function CreateTicketDialog({
   const { user } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [subject, setSubject] = useState('');
+  
   const [message, setMessage] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      if (relatedOrderShortId) {
-        setSubject(`Inquiry on Order #${relatedOrderShortId}`);
-      } else if (relatedWalletTransactionId) {
-        setSubject('Wallet Top-up Inquiry');
-      } else {
-        setSubject('');
-      }
-      setMessage('');
-      setAttachment(null);
-    }
-  }, [open, relatedOrderShortId, relatedWalletTransactionId]);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      toast.error('Only PNG, JPG, WebP, and PDF files are allowed');
-      return;
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error('File must be under 5 MB');
-      return;
-    }
-    setAttachment(file);
-  };
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !message.trim()) return;
+    if (!message.trim() && !attachment) {
+      toast.error('Please enter a message');
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const customerId = user.id;
-      let attachmentUrl: string | null = null;
+      // 1. Get customer record
+      const { data: custData, error: custErr } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user?.id)
+        .maybeSingle();
 
+      if (custErr || !custData) {
+        toast.error('Customer profile not found');
+        return;
+      }
+
+      // 2. Get or create canonical chat
+      const { data: ticketId, error: tktErr } = await supabase.rpc(
+        'get_or_create_customer_chat',
+        { p_customer_id: custData.id }
+      );
+
+      if (tktErr || !ticketId) {
+        throw new Error('Could not access support conversation');
+      }
+
+      // 3. Upload attachment if present
+      let attachmentUrl: string | null = null;
       if (attachment) {
-        const ext = attachment.name.split('.').pop()?.toLowerCase() || 'bin';
-        const uploadPath = `${customerId}/${Date.now()}.${ext}`;
+        const ext = attachment.name.split('.').pop();
+        const filePath = `${custData.id}/${Date.now()}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from('support-attachments')
-          .upload(uploadPath, attachment);
+          .upload(filePath, attachment);
+
         if (!uploadErr) {
           const { data: urlData } = supabase.storage
             .from('support-attachments')
-            .getPublicUrl(uploadPath);
+            .getPublicUrl(filePath);
           attachmentUrl = urlData?.publicUrl || null;
         }
       }
 
-      const finalSubject = subject.trim() || (relatedOrderShortId ? `Order #${relatedOrderShortId}` : message.trim().slice(0, 35) + '...');
-
-      const insertData: Record<string, any> = {
-        customer_id: customerId,
-        subject: finalSubject,
-        category: relatedOrderShortId ? 'Order' : 'General',
-        message: message.trim(),
-        priority: 'medium',
-      };
-
-      if (relatedOrderId) insertData.related_order_id = relatedOrderId;
-      if (relatedWalletTransactionId) insertData.related_wallet_transaction_id = relatedWalletTransactionId;
-
-      const { data, error } = await supabase
-        .from('support_tickets')
-        .insert(insertData as any)
-        .select('id, short_id')
-        .single();
-      if (error) throw error;
-
-      if (attachmentUrl && data) {
-        await supabase.from('support_messages').insert({
-          ticket_id: data.id,
-          sender_id: customerId,
-          sender_role: 'customer',
-          message: '[Attachment]',
-          attachment_url: attachmentUrl,
-        } as any);
+      // 4. Construct formatted message
+      let formattedMsg = '';
+      if (relatedOrderShortId) {
+        formattedMsg += `📦 Order Issue: #${relatedOrderShortId}\n`;
+      } else if (relatedWalletTransactionId) {
+        formattedMsg += `💳 Wallet Top-up Issue\n`;
       }
+      formattedMsg += message.trim();
 
-      toast.success('Message sent to Support');
+      // 5. Insert message into continuous thread
+      const { error: msgErr } = await supabase
+        .from('support_messages')
+        .insert({
+          ticket_id: ticketId,
+          sender_id: custData.id,
+          sender_role: 'customer',
+          message: formattedMsg,
+          attachment_url: attachmentUrl,
+        });
+
+      if (msgErr) throw msgErr;
+
+      toast.success('Message sent to support team');
+      setMessage('');
+      setAttachment(null);
       onOpenChange(false);
       onCreated?.();
 
-      if (data?.id) {
-        navigate('/support', { state: { openTicketId: data.id } });
-      }
+      navigate('/support');
     } catch (err: any) {
       toast.error(err.message || 'Failed to send message');
     } finally {
@@ -137,91 +121,84 @@ export function CreateTicketDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md rounded-2xl">
+      <DialogContent className="max-w-md rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <MessageSquare className="w-4 h-4" />
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              <Headphones className="w-4 h-4" />
             </div>
-            {relatedOrderShortId ? 'Message Support About Order' : 'Start a Conversation'}
-          </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            Send a direct message to our support team. We reply as quickly as possible.
+            <DialogTitle className="text-base">
+              {relatedOrderShortId ? `Report Order #${relatedOrderShortId}` : 'Message Live Support'}
+            </DialogTitle>
+          </div>
+          <DialogDescription className="text-xs">
+            Send a note directly to our support team. Your message will appear in your live chat.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          {relatedOrderShortId && (
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-muted/60 border border-border/50 text-xs">
-              <Receipt className="w-4 h-4 text-emerald-600 shrink-0" />
-              <div>
-                <span className="text-muted-foreground">Linked Order: </span>
-                <span className="font-mono font-bold text-foreground">#{relatedOrderShortId}</span>
-              </div>
-            </div>
-          )}
-
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <Label htmlFor="subject" className="text-xs font-medium text-muted-foreground">
-              Topic / Subject <span className="text-[10px] opacity-60">(Optional)</span>
-            </Label>
-            <Input
-              id="subject"
-              placeholder={relatedOrderShortId ? `Inquiry on #${relatedOrderShortId}` : "e.g. Question about delivery"}
-              value={subject}
-              onChange={e => setSubject(e.target.value)}
-              className="h-9 text-xs rounded-xl"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="message" className="text-xs font-medium">Your Message</Label>
+            <Label className="text-xs">Your Message</Label>
             <Textarea
-              id="message"
-              placeholder="Type your message here..."
               value={message}
-              onChange={e => setMessage(e.target.value)}
-              required
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Describe what happened or how we can help..."
               rows={4}
-              className="text-xs rounded-xl resize-none"
+              className="text-xs resize-none rounded-xl"
+              required
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs pt-1">
             <input
               type="file"
               ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".png,.jpg,.jpeg,.webp,.pdf"
               className="hidden"
+              accept="image/*,application/pdf"
+              onChange={(e) => {
+                if (e.target.files?.[0]) setAttachment(e.target.files[0]);
+              }}
             />
-            {attachment ? (
-              <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/50 border text-xs">
-                <span className="truncate max-w-[240px] text-muted-foreground">{attachment.name}</span>
-                <button type="button" onClick={() => setAttachment(null)} className="text-destructive hover:opacity-80">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <Button
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs rounded-lg gap-1.5"
+            >
+              <Paperclip className="w-3.5 h-3.5" />
+              {attachment ? attachment.name.substring(0, 16) + '...' : 'Attach screenshot'}
+            </Button>
+
+            {attachment && (
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                className="gap-2 h-8 text-xs rounded-xl text-muted-foreground"
+                onClick={() => setAttachment(null)}
+                className="text-destructive text-xs hover:underline"
               >
-                <Paperclip className="w-3.5 h-3.5" /> Attach screenshot or file
-              </Button>
+                Remove
+              </button>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="h-9 text-xs">
+          <div className="flex justify-end gap-2 pt-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              className="text-xs rounded-xl"
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !message.trim()} size="sm" className="h-9 text-xs gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
-              {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
-              Send Message
+            <Button
+              type="submit"
+              size="sm"
+              disabled={submitting}
+              className="text-xs rounded-xl"
+            >
+              {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+              Send to Support
             </Button>
           </div>
         </form>
