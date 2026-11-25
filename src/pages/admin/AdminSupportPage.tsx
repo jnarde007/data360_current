@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Send, Search, Paperclip, MessageSquare, RefreshCw } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, Search, Paperclip, MessageSquare, RefreshCw, Trash2 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 
@@ -179,6 +179,17 @@ export default function AdminSupportPage() {
           });
         }
       })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'support_messages',
+        filter: `ticket_id=eq.${selectedTicket.id}`,
+      }, (payload) => {
+        const deletedId = (payload.old as any)?.id;
+        if (deletedId) {
+          setMessages(prev => prev.filter(m => m.id !== deletedId));
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selectedTicket?.id]);
@@ -210,6 +221,16 @@ export default function AdminSupportPage() {
       toast({ title: 'Failed to send', description: 'Could not send message.', variant: 'destructive' });
     } finally {
       setSending(false);
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase.rpc('delete_support_message', { p_message_id: messageId });
+      if (error) throw error;
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    } catch {
+      toast({ title: 'Could not delete', description: 'Failed to delete message.', variant: 'destructive' });
     }
   };
 
@@ -401,7 +422,18 @@ export default function AdminSupportPage() {
                     messages.map((m) => {
                       const isAdmin = m.sender_role === 'admin';
                       return (
-                        <div key={m.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                        <div key={m.id} className={`flex group items-center gap-1.5 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                          {/* Trash button for Admin (admins can delete any message) */}
+                          {isAdmin ? (
+                            <button
+                              onClick={() => deleteMessage(m.id)}
+                              title="Delete message"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : null}
+
                           <div
                             className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs ${
                               isAdmin
@@ -419,6 +451,17 @@ export default function AdminSupportPage() {
                               {format(new Date(m.created_at), 'hh:mm a')}
                             </p>
                           </div>
+
+                          {/* Trash button for customer messages when viewed by Admin */}
+                          {!isAdmin ? (
+                            <button
+                              onClick={() => deleteMessage(m.id)}
+                              title="Delete customer message"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : null}
                         </div>
                       );
                     })

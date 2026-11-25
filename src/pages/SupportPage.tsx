@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, Search, MessageSquare } from 'lucide-react';
+import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, Search, MessageSquare, Trash2 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
 interface Ticket {
@@ -165,6 +165,17 @@ export default function SupportPage() {
           });
         }
       })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'support_messages',
+        filter: `ticket_id=eq.${selectedTicket.id}`,
+      }, (payload) => {
+        const deletedId = (payload.old as any)?.id;
+        if (deletedId) {
+          setMessages(prev => prev.filter(m => m.id !== deletedId));
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selectedTicket?.id]);
@@ -196,6 +207,16 @@ export default function SupportPage() {
       toast({ title: 'Failed to send', description: 'Could not send message. Please try again.', variant: 'destructive' });
     } finally {
       setSending(false);
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase.rpc('delete_support_message', { p_message_id: messageId });
+      if (error) throw error;
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    } catch {
+      toast({ title: 'Could not delete', description: 'You can only delete your own messages.', variant: 'destructive' });
     }
   };
 
@@ -364,7 +385,18 @@ export default function SupportPage() {
                     messages.map((m) => {
                       const isCustomer = m.sender_role === 'customer';
                       return (
-                        <div key={m.id} className={`flex ${isCustomer ? 'justify-end' : 'justify-start'}`}>
+                        <div key={m.id} className={`flex group items-center gap-1.5 ${isCustomer ? 'justify-end' : 'justify-start'}`}>
+                          {/* Trash button for customer's own messages */}
+                          {isCustomer && (
+                            <button
+                              onClick={() => deleteMessage(m.id)}
+                              title="Delete message"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
                           <div
                             className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs ${
                               isCustomer
