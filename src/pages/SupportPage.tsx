@@ -5,12 +5,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSearchParams } from 'react-router-dom';
 import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, Search, MessageSquare, Check, CheckCheck } from 'lucide-react';
+import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, Search, MessageSquare } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
 interface Ticket {
@@ -222,8 +221,8 @@ export default function SupportPage() {
       <div className="space-y-4 max-w-6xl mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Help & Support</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">Chat directly with support for quick assistance</p>
+            <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Live Support</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">Chat with our support team</p>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2 shadow-sm shrink-0">
             <Plus className="w-4 h-4" /> Start a Chat
@@ -288,7 +287,7 @@ export default function SupportPage() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-xs truncate ${unreadCount > 0 ? 'font-bold text-foreground' : 'font-medium text-foreground'}`}>
-                          {t.subject || 'Support Request'}
+                          {t.subject || 'Support Chat'}
                         </p>
                         <span className="text-[10px] text-muted-foreground shrink-0">
                           {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true })}
@@ -322,7 +321,7 @@ export default function SupportPage() {
                 <MessageSquare className="w-12 h-12 text-muted-foreground/30 mb-3" />
                 <h3 className="text-sm font-semibold text-foreground">Select a conversation</h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  Pick a chat on the left to read customer support updates and reply.
+                  Pick a chat on the left to read updates and send replies.
                 </p>
               </div>
             ) : (
@@ -339,7 +338,7 @@ export default function SupportPage() {
                       <ArrowLeft className="w-4 h-4" />
                     </Button>
                     <div>
-                      <h2 className="text-xs sm:text-sm font-bold text-foreground line-clamp-1">{selectedTicket.subject}</h2>
+                      <h2 className="text-xs sm:text-sm font-bold text-foreground line-clamp-1">{selectedTicket.subject || 'Live Support'}</h2>
                       <p className="text-[10px] text-muted-foreground font-mono">
                         {selectedTicket.short_id} {relatedOrderShortId ? `· Order: ${relatedOrderShortId}` : ''}
                       </p>

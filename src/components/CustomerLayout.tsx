@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+﻿import { useState, useCallback } from 'react';
 import { useServerTimeSync } from '@/hooks/use-server-time';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,7 +36,7 @@ const financeLinks = [
 
 const settingsLinks = [
   { to: '/developer-api', label: 'Developer API', icon: KeyRound },
-  { to: '/support', label: 'Support', icon: LifeBuoy },
+  { to: '/support', label: 'Live Support', icon: LifeBuoy },
   { to: '/account', label: 'Account', icon: Settings },
 ];
 
@@ -155,12 +155,12 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
               </Link>
-              {/* Close – mobile */}
+              {/* Close â€“ mobile */}
               <Button variant="ghost" size="icon" className="lg:hidden h-8 w-8 shrink-0 ml-auto" onClick={closeSidebar}>
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            {/* Collapse toggle – desktop, separate row */}
+            {/* Collapse toggle â€“ desktop, separate row */}
             <div className={`hidden lg:flex ${collapsed ? 'justify-center px-2.5' : 'justify-end px-5'} pb-4`}>
               <button
                 onClick={() => setCollapsed(!collapsed)}

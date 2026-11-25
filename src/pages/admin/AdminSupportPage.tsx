@@ -86,7 +86,6 @@ export default function AdminSupportPage() {
       const ticketList = (data || []) as Ticket[];
       setTickets(ticketList);
 
-      // Load customers
       const customerIds = Array.from(new Set(ticketList.map(t => t.customer_id).filter(Boolean)));
       if (customerIds.length > 0) {
         const { data: custData } = await supabase
@@ -134,7 +133,6 @@ export default function AdminSupportPage() {
       if (error) throw error;
       setMessages((data || []) as any);
 
-      // Mark unread customer messages as read
       await supabase.rpc('mark_support_messages_read', {
         p_ticket_id: ticketId,
         p_reader_role: 'admin',
@@ -243,8 +241,8 @@ export default function AdminSupportPage() {
       <div className="space-y-4 max-w-6xl mx-auto">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Support Messages</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">Manage customer inquiries and live chat</p>
+            <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Customer Chats</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">Live conversations and inquiries</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => loadTickets()} className="gap-1.5 h-8 text-xs">
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
@@ -321,7 +319,7 @@ export default function AdminSupportPage() {
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground/90 font-medium truncate mt-0.5">
-                            {t.subject || 'Support Request'}
+                            {t.subject || 'Support Chat'}
                           </p>
                           <div className="flex items-center justify-between gap-2 mt-1">
                             <p className="text-[11px] text-muted-foreground line-clamp-1 flex-1">

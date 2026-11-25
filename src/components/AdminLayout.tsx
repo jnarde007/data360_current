@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+﻿import { useState, useMemo, useRef } from 'react';
 import { useMobileTableCards } from '@/hooks/useMobileTableCards';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -61,7 +61,7 @@ const navGroups: NavGroup[] = [
     icon: Users,
     items: [
       { to: '/admin/customers', label: 'Customers', icon: Users, description: 'All registered users, balances and account status.' },
-      { to: '/admin/support', label: 'Support Tickets', icon: LifeBuoy, description: 'Respond to customer support conversations.' },
+      { to: '/admin/support', label: 'Chats', icon: LifeBuoy, description: 'Live conversations and inquiries.' },
       { to: '/admin/super-agents', label: 'Super Agents', icon: Crown, description: 'Approve resellers and manage Super Agent pricing.', superAdminOnly: true },
       { to: '/admin/api-usage', label: 'API Usage', icon: Activity, description: 'Developer API request monitoring (no blocking).' },
       { to: '/admin/affiliates', label: 'Affiliates', icon: UserCheck, description: 'Manage affiliates, commissions and withdrawals.' },
@@ -301,7 +301,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search pages…"
+                  placeholder="Search pagesâ€¦"
                   className="h-8 pl-8 pr-7 text-[12px] bg-muted/40 border-border/40 focus-visible:ring-1"
                 />
                 {search && (
@@ -340,7 +340,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 )
             ) && (
               <p className="text-[11px] text-muted-foreground/60 text-center py-6 px-3">
-                No pages match “{search}”.
+                No pages match â€œ{search}â€.
               </p>
             )}
           </nav>
@@ -415,7 +415,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               className="flex items-center gap-2 w-72 h-9 px-3 rounded-xl border border-border/60 bg-muted/40 text-sm text-muted-foreground hover:bg-muted/70 transition-colors"
             >
               <Search className="w-4 h-4" />
-              <span className="flex-1 text-left">Jump to page…</span>
+              <span className="flex-1 text-left">Jump to pageâ€¦</span>
               <kbd className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-border bg-background">Ctrl K</kbd>
             </button>
             <NotificationCenter targetType="admin" />
@@ -454,3 +454,4 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     </TooltipProvider>
   );
 }
+
