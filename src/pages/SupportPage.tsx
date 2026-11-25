@@ -5,14 +5,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSearchParams } from 'react-router-dom';
 import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, Plus, ArrowLeft, Send, Paperclip,
-  X, Search, MessageSquare, Receipt
+  X, Search, MessageSquare, Receipt, CheckCheck
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
@@ -39,6 +38,7 @@ interface Message {
   message: string;
   attachment_url: string | null;
   created_at: string;
+  read_at?: string | null;
 }
 
 export default function SupportPage() {
@@ -61,16 +61,39 @@ export default function SupportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deepLinkedRef = useRef(false);
 
+  // Load conversations and compute real unread counts
   const loadTickets = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const { data, error } = await supabase
+      const { data: ticketsData, error } = await supabase
         .from('support_tickets')
         .select('*')
         .eq('customer_id', user.id)
         .order('updated_at', { ascending: false });
+
       if (error) throw error;
-      setTickets((data || []) as Ticket[]);
+      const list = (ticketsData || []) as Ticket[];
+
+      if (list.length > 0) {
+        const ticketIds = list.map(t => t.id);
+        const { data: unreadData } = await supabase
+          .from('support_messages')
+          .select('ticket_id')
+          .in('ticket_id', ticketIds)
+          .neq('sender_role', 'customer')
+          .is('read_at', null);
+
+        const countMap: Record<string, number> = {};
+        (unreadData || []).forEach((m: any) => {
+          countMap[m.ticket_id] = (countMap[m.ticket_id] || 0) + 1;
+        });
+
+        list.forEach(t => {
+          t.unread_count = countMap[t.id] || 0;
+        });
+      }
+
+      setTickets(list);
     } catch {
       // silent
     } finally {
@@ -110,6 +133,17 @@ export default function SupportPage() {
         .order('created_at', { ascending: true });
       if (error) throw error;
       setMessages((data || []) as Message[]);
+
+      // Mark support messages as read
+      await supabase
+        .from('support_messages')
+        .update({ read_at: new Date().toISOString() } as any)
+        .eq('ticket_id', ticketId)
+        .neq('sender_role', 'customer')
+        .is('read_at', null);
+
+      // Instantly clear local unread badge
+      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, unread_count: 0 } : t));
     } catch {
       // silent
     } finally {
@@ -132,11 +166,11 @@ export default function SupportPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Real-time messages for active conversation
+  // Real-time incoming messages
   useEffect(() => {
     if (!selectedTicket) return;
     const channel = supabase
-      .channel(`cust-chat-${selectedTicket.id}`)
+      .channel(`cust-live-${selectedTicket.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -145,6 +179,13 @@ export default function SupportPage() {
       }, (payload) => {
         const msg = payload.new as Message;
         setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+        if (msg.sender_role !== 'customer') {
+          supabase
+            .from('support_messages')
+            .update({ read_at: new Date().toISOString() } as any)
+            .eq('id', msg.id)
+            .then(() => {});
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -210,7 +251,7 @@ export default function SupportPage() {
           </div>
           <Button
             onClick={() => setCreateOpen(true)}
-            className="gap-2 h-9 px-3.5 text-xs rounded-xl bg-primary text-primary-foreground shadow-xs hover:opacity-90"
+            className="gap-2 h-9 px-3.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
           >
             <Plus className="w-4 h-4" /> Start New Chat
           </Button>
@@ -237,7 +278,7 @@ export default function SupportPage() {
                 <MessageSquare className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
                 <p className="text-sm font-semibold text-foreground">No conversations yet</p>
                 <p className="text-xs text-muted-foreground mt-1">Need help with an order or account? Send us a message.</p>
-                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl">
+                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
                   <Plus className="w-3.5 h-3.5" /> Start Chat
                 </Button>
               </div>
@@ -246,34 +287,46 @@ export default function SupportPage() {
                 {visibleTickets.map(t => {
                   const active = selectedTicket?.id === t.id;
                   const initial = t.subject ? t.subject.slice(0, 1).toUpperCase() : 'S';
+                  const unread = (t.unread_count || 0) > 0;
                   return (
                     <button
                       key={t.id}
                       onClick={() => openTicket(t)}
-                      className={`w-full text-left rounded-2xl border p-3.5 transition-all flex items-center gap-3 ${
+                      className={`w-full text-left rounded-2xl border p-3.5 transition-all flex items-center gap-3.5 ${
                         active
-                          ? 'border-primary/50 bg-primary/5 shadow-xs'
+                          ? 'border-emerald-500/40 bg-emerald-500/5 shadow-xs'
+                          : unread
+                          ? 'border-emerald-500/30 bg-card shadow-xs'
                           : 'border-border/50 bg-card hover:bg-muted/40'
                       }`}
                     >
                       {/* Avatar */}
-                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                        {initial}
+                      <div className="relative shrink-0">
+                        <div className="w-11 h-11 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-sm">
+                          {initial}
+                        </div>
                       </div>
 
                       {/* Info & Snippet */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <p className="text-xs font-semibold text-foreground truncate">
+                          <p className={`text-xs truncate ${unread ? 'font-bold text-foreground' : 'font-semibold text-foreground/90'}`}>
                             {t.subject || 'Support Conversation'}
                           </p>
-                          <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                          <span className={`text-[10px] shrink-0 ${unread ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-muted-foreground/60'}`}>
                             {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true })}
                           </span>
                         </div>
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {t.message}
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className={`text-[11px] truncate ${unread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                            {t.message}
+                          </p>
+                          {unread && (
+                            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-xs">
+                              {t.unread_count}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -297,34 +350,35 @@ export default function SupportPage() {
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </Button>
-                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
                       S
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate">{selectedTicket.subject}</p>
-                      <p className="text-[10px] text-muted-foreground">Support Team</p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Customer Support</p>
                     </div>
                   </div>
 
                   {relatedOrderShortId && (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground shrink-0">
-                      <Receipt className="w-3.5 h-3.5 text-primary" />
+                      <Receipt className="w-3.5 h-3.5 text-emerald-600" />
                       <span>Order #{relatedOrderShortId}</span>
                     </div>
                   )}
                 </div>
 
                 {/* Messages Body */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/15">
-                  {/* First Message from creation */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/50 dark:bg-muted/10">
+                  {/* First Message from creation (Outgoing) */}
                   <div className="flex justify-end gap-2 items-end">
                     <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
-                      <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-primary text-primary-foreground shadow-xs">
+                      <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#0f172a] dark:bg-blue-600 text-white shadow-xs">
                         <p className="text-xs whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
+                        <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-white/60">
+                          <span>{format(new Date(selectedTicket.created_at), 'h:mm a')}</span>
+                          <CheckCheck className="w-3 h-3 text-emerald-400" />
+                        </div>
                       </div>
-                      <p className="text-[9px] text-muted-foreground/50 text-right px-1">
-                        {format(new Date(selectedTicket.created_at), 'dd MMM, h:mm a')}
-                      </p>
                     </div>
                   </div>
 
@@ -338,7 +392,7 @@ export default function SupportPage() {
                         return (
                           <div key={m.id} className="flex justify-end gap-2 items-end">
                             <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
-                              <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-primary text-primary-foreground shadow-xs">
+                              <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#0f172a] dark:bg-blue-600 text-white shadow-xs">
                                 {m.attachment_url && (
                                   <div className="mb-2 p-1 rounded-lg bg-white/10">
                                     <AttachmentRenderer url={m.attachment_url} />
@@ -347,10 +401,11 @@ export default function SupportPage() {
                                 {m.message && m.message !== '[Attachment]' && (
                                   <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
                                 )}
+                                <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-white/60">
+                                  <span>{format(new Date(m.created_at), 'h:mm a')}</span>
+                                  <CheckCheck className={`w-3 h-3 ${m.read_at ? 'text-emerald-400' : 'text-white/40'}`} />
+                                </div>
                               </div>
-                              <p className="text-[9px] text-muted-foreground/50 text-right px-1">
-                                {format(new Date(m.created_at), 'h:mm a')}
-                              </p>
                             </div>
                           </div>
                         );
@@ -359,11 +414,11 @@ export default function SupportPage() {
                       // Support reply on the left
                       return (
                         <div key={m.id} className="flex justify-start gap-2 items-end">
-                          <div className="w-6 h-6 rounded-full bg-muted border flex items-center justify-center font-bold text-[9px] text-muted-foreground shrink-0 mb-4">
+                          <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-[9px] shrink-0 mb-2">
                             S
                           </div>
                           <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
-                            <div className="rounded-2xl rounded-bl-xs px-4 py-2.5 bg-card border border-border/70 text-foreground shadow-xs">
+                            <div className="rounded-2xl rounded-bl-xs px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200/90 dark:border-slate-700/80 shadow-xs">
                               {m.attachment_url && (
                                 <div className="mb-2">
                                   <AttachmentRenderer url={m.attachment_url} />
@@ -372,10 +427,10 @@ export default function SupportPage() {
                               {m.message && m.message !== '[Attachment]' && (
                                 <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
                               )}
+                              <p className="text-[9px] text-muted-foreground/60 mt-1">
+                                {format(new Date(m.created_at), 'h:mm a')}
+                              </p>
                             </div>
-                            <p className="text-[9px] text-muted-foreground/50 px-1">
-                              Support · {format(new Date(m.created_at), 'h:mm a')}
-                            </p>
                           </div>
                         </div>
                       );
@@ -424,7 +479,7 @@ export default function SupportPage() {
                       type="submit"
                       disabled={sending || (!replyText.trim() && !attachment)}
                       size="icon"
-                      className="h-10 w-10 rounded-xl bg-primary text-primary-foreground shrink-0 shadow-xs"
+                      className="h-10 w-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs"
                     >
                       {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </Button>
@@ -433,14 +488,14 @@ export default function SupportPage() {
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-border/70 p-12 text-center bg-card/40 flex flex-col items-center justify-center min-h-[420px]">
-                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
                   <MessageSquare className="w-6 h-6" />
                 </div>
                 <h3 className="text-sm font-semibold text-foreground">Select a conversation</h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
                   Choose a chat on the left to read messages and reply, or start a new conversation.
                 </p>
-                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl">
+                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
                   <Plus className="w-3.5 h-3.5" /> Start New Chat
                 </Button>
               </div>
