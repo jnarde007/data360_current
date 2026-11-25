@@ -615,3 +615,21 @@
 
 /* Leading icons inside inputs must sit above glass input backgrounds */
 .relative > svg.absolute { z-index: 10; pointer-events: none; }
+
+/* Announcement Ticker Marquee */
+@keyframes tickerMarquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-ticker-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: tickerMarquee 26s linear infinite;
+  will-change: transform;
+}
+
+.animate-ticker-marquee:hover,
+.animate-ticker-marquee:active {
+  animation-play-state: paused !important;
+}

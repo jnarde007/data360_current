@@ -58,6 +58,7 @@ import GuestCheckerPage from "./pages/GuestCheckerPage";
 import AfaPage from "./pages/AfaPage";
 import AdminAfaPage from "./pages/admin/AdminAfaPage";
 import UpdatePrompt from "./components/UpdatePrompt";
+import { SiteAnnouncementBanner } from "@/components/SiteAnnouncementBanner";
 import InstallHelpDialog from "./components/InstallHelpDialog";
 import MyStorePage from "./pages/MyStorePage";
 import PublicStorePage from "./pages/PublicStorePage";
@@ -81,6 +82,7 @@ const App = () => (
           <UpdatePrompt />
           <InstallHelpDialog />
           <BrowserRouter>
+            <SiteAnnouncementBanner />
             <ScrollToTop />
             <BackToTopButton />
             <Routes>

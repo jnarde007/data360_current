@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Eye, EyeOff, Loader2, Lock, ShieldCheck, Mail, Send, ExternalLink } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Lock, ShieldCheck, Mail, Send, ExternalLink , Megaphone } from 'lucide-react';
 import { APP_BUILD_TIME, APP_VERSION_LABEL } from '@/lib/app-version';
 import { DiagnosticsApprovalCard } from '@/components/admin/DiagnosticsApprovalCard';
 
@@ -21,6 +21,10 @@ interface Settings {
   notification_sender_name: string;
   send_email_on_approval: string;
   send_email_on_verification: string;
+  announcement_enabled: string;
+  announcement_title: string;
+  announcement_message: string;
+  announcement_type: string;
 }
 
 const defaultSettings: Settings = {
@@ -34,6 +38,10 @@ const defaultSettings: Settings = {
   notification_sender_name: 'DATA360',
   send_email_on_approval: 'false',
   send_email_on_verification: 'false',
+  announcement_enabled: 'false',
+  announcement_title: 'Scheduled Maintenance Notice',
+  announcement_message: 'MTN delivery is temporarily paused for maintenance and will resume on the 1st. Telecel and AirtelTigo orders remain instant.',
+  announcement_type: 'warning',
 };
 
 export default function AdminSettingsPage() {
@@ -315,6 +323,75 @@ export default function AdminSettingsPage() {
             {changingPassword && <Loader2 className="w-4 h-4 animate-spin" />}
             Change Password
           </Button>
+        </div>
+
+                {/* Site Announcement Ticker */}
+        <div className="glass-card glow-border p-5 space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Megaphone className="w-5 h-5 text-primary" />
+              <div>
+                <h2 className="text-lg font-display font-semibold text-foreground">Announcement & Ticker Banner</h2>
+                <p className="text-xs text-muted-foreground">Display a live scrolling ticker across all public and customer pages.</p>
+              </div>
+            </div>
+            <Switch
+              checked={settings.announcement_enabled === 'true'}
+              onCheckedChange={(checked) => updateSetting('announcement_enabled', checked ? 'true' : 'false')}
+            />
+          </div>
+
+          {settings.announcement_enabled === 'true' && (
+            <div className="space-y-4 pt-2 border-t border-border/40">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Badge Title</Label>
+                  <Input
+                    value={settings.announcement_title}
+                    onChange={(e) => updateSetting('announcement_title', e.target.value)}
+                    placeholder="e.g. MAINTENANCE or NOTICE"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Banner Color / Severity</Label>
+                  <select
+                    value={settings.announcement_type}
+                    onChange={(e) => updateSetting('announcement_type', e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 mt-1"
+                  >
+                    <option value="warning">Amber (Maintenance / Warning)</option>
+                    <option value="destructive">Red (Emergency / Critical)</option>
+                    <option value="info">Blue (Update / Information)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <Label>Announcement Message</Label>
+                <textarea
+                  value={settings.announcement_message}
+                  onChange={(e) => updateSetting('announcement_message', e.target.value)}
+                  placeholder="Enter the message you want customers to read..."
+                  rows={2}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 mt-1"
+                />
+              </div>
+
+              <div className="rounded-lg p-3 bg-muted/40 border border-border/50 space-y-2">
+                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Live Preview:</span>
+                <div className={`w-full h-8 px-3 rounded flex items-center overflow-hidden text-xs font-semibold ${
+                  settings.announcement_type === 'destructive' ? 'bg-rose-600 text-white' :
+                  settings.announcement_type === 'info' ? 'bg-blue-600 text-white' : 'bg-amber-500 text-amber-950'
+                }`}>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mr-2 bg-black/20">
+                    {settings.announcement_title || 'NOTICE'}
+                  </span>
+                  <span className="truncate">{settings.announcement_message}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* General Settings */}
