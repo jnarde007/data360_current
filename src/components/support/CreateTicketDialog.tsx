@@ -9,23 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Loader2, LifeBuoy, Paperclip, X } from 'lucide-react';
+import { Loader2, MessageSquare, Paperclip, X, Send } from 'lucide-react';
 
 const CATEGORIES = [
-  'Order delayed',
-  'Order failed',
-  'Wrong bundle received',
+  'General Enquiry',
+  'Order assistance',
   'Wallet top-up issue',
   'Payment issue',
-  'Refund issue',
-  'Account issue',
-  'Other',
-];
-
-const PRIORITIES = [
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
+  'Agent / Super Agent enquiry',
+  'Feedback & Suggestions',
+  'Report an Issue',
 ];
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -53,6 +46,7 @@ export function CreateTicketDialog({
   const { user } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const getInitialSubject = () => {
     if (relatedOrderShortId) return `Issue with order ${relatedOrderShortId}`;
     if (relatedWalletTransactionId) return 'Wallet top-up issue';
@@ -60,39 +54,18 @@ export function CreateTicketDialog({
   };
 
   const [subject, setSubject] = useState(getInitialSubject);
-  const [category, setCategory] = useState(defaultCategory || '');
+  const [category, setCategory] = useState(defaultCategory || 'General Enquiry');
   const [message, setMessage] = useState('');
-  const [priority, setPriority] = useState('medium');
-  const [subjectTouched, setSubjectTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
 
-  const CATEGORY_SUBJECTS: Record<string, string> = {
-    'Order delayed': 'My order is taking too long',
-    'Order failed': 'My order failed to process',
-    'Wrong bundle received': 'I received the wrong data bundle',
-    'Wallet top-up issue': 'Issue with my wallet top-up',
-    'Payment issue': 'Problem with my payment',
-    'Refund issue': 'I need a refund',
-    'Account issue': 'Issue with my account',
-  };
-
-  const handleCategoryChange = (val: string) => {
-    setCategory(val);
-    if (!subjectTouched && !relatedOrderShortId && !relatedWalletTransactionId) {
-      setSubject(CATEGORY_SUBJECTS[val] || '');
-    }
-  };
-
-  const isFormValid = subject.trim().length >= 3 && category && message.trim();
+  const isFormValid = message.trim().length >= 2;
 
   const resetForm = () => {
     setSubject(getInitialSubject());
-    setCategory(defaultCategory || '');
+    setCategory(defaultCategory || 'General Enquiry');
     setMessage('');
-    setPriority('medium');
     setAttachment(null);
-    setSubjectTouched(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,7 +96,6 @@ export function CreateTicketDialog({
 
       let attachmentUrl: string | null = null;
 
-      // Upload attachment if present
       if (attachment) {
         const ext = attachment.name.split('.').pop();
         const path = `${customerId}/${Date.now()}.${ext}`;
@@ -140,12 +112,14 @@ export function CreateTicketDialog({
         }
       }
 
+      const finalSubject = subject.trim() || (category ? `${category}: ${message.trim().slice(0, 35)}...` : 'Support Enquiry');
+
       const insertData: Record<string, any> = {
         customer_id: customerId,
-        subject: subject.trim(),
-        category,
+        subject: finalSubject,
+        category: category || 'General Enquiry',
         message: message.trim(),
-        priority,
+        priority: 'medium',
       };
 
       if (relatedOrderId) insertData.related_order_id = relatedOrderId;
@@ -158,7 +132,6 @@ export function CreateTicketDialog({
         .single();
       if (error) throw error;
 
-      // If attachment was uploaded, add it as the first message
       if (attachmentUrl && data) {
         await supabase.from('support_messages').insert({
           ticket_id: data.id,
@@ -169,17 +142,16 @@ export function CreateTicketDialog({
         } as any);
       }
 
-      toast.success('Support ticket created successfully');
+      toast.success('Message sent! Our support team will reply shortly.');
       resetForm();
       onOpenChange(false);
       onCreated?.();
 
-      // Navigate to the ticket thread
       if (data?.id) {
         navigate('/support', { state: { openTicketId: data.id } });
       }
     } catch (err: any) {
-      toast.error(err.message || 'Failed to create ticket');
+      toast.error(err.message || 'Failed to send message');
     } finally {
       setSubmitting(false);
     }
@@ -187,58 +159,46 @@ export function CreateTicketDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg" style={{ borderRadius: 'var(--card-radius-lg)' }}>
+      <DialogContent className="sm:max-w-lg rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <LifeBuoy className="w-5 h-5 text-primary" />
-            Report an Issue
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            Chat with Support
           </DialogTitle>
           <DialogDescription>
-            Describe your issue and we'll get back to you as soon as possible.
+            Have a question, need help with an order, or want to make an enquiry? Send us a message and we'll reply right here in your chat.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="subject">Subject</Label>
-            <Input
-              id="subject"
-              placeholder="Brief summary of the issue"
-              value={subject}
-              onChange={e => { setSubject(e.target.value); setSubjectTouched(true); }}
-              required
-              minLength={3}
-              maxLength={200}
-            />
+        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">What can we help you with?</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="h-10 text-sm rounded-xl">
+                <SelectValue placeholder="Select a topic" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map(c => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select value={category} onValueChange={handleCategoryChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Priority</Label>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITIES.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="subject" className="text-xs font-semibold">
+              Subject <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Input
+              id="subject"
+              placeholder="e.g. Question about bundles or delivery"
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              maxLength={200}
+              className="h-10 text-sm rounded-xl"
+            />
           </div>
 
           {relatedOrderShortId && (
@@ -248,24 +208,21 @@ export function CreateTicketDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="message">Message</Label>
+            <Label htmlFor="message" className="text-xs font-semibold">Message</Label>
             <Textarea
               id="message"
-              placeholder="Describe the issue in detail..."
+              placeholder="Type your message or enquiry here..."
               value={message}
               onChange={e => setMessage(e.target.value)}
               required
               rows={4}
               maxLength={2000}
+              className="text-sm rounded-xl resize-none"
             />
-            <p className="text-[11px] text-muted-foreground/60">
-              Include order ID, phone number, network, and what went wrong.
-            </p>
           </div>
 
           {/* Attachment */}
           <div className="space-y-1.5">
-            <Label>Attachment <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <input
               ref={fileInputRef}
               type="file"
@@ -274,7 +231,7 @@ export function CreateTicketDialog({
               onChange={handleFileChange}
             />
             {attachment ? (
-              <div className="flex items-center gap-2 text-xs bg-muted/50 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 text-xs bg-muted/50 rounded-lg px-3 py-2 border border-border/50">
                 <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 <span className="truncate flex-1 text-foreground">{attachment.name}</span>
                 <button
@@ -290,33 +247,30 @@ export function CreateTicketDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="gap-1.5 text-xs"
+                className="gap-1.5 text-xs rounded-lg h-8"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Paperclip className="w-3.5 h-3.5" />
-                Attach screenshot or file
+                Attach screenshot or file (optional)
               </Button>
             )}
-            <p className="text-[10px] text-muted-foreground/50">PNG, JPG, WebP, or PDF. Max 5 MB.</p>
           </div>
 
-          {/* Expectation note */}
-          <p className="text-[11px] text-muted-foreground/60 bg-muted/30 rounded-lg px-3 py-2">
-            Our team will review your issue and respond as soon as possible.
-          </p>
-
-          <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !isFormValid}>
+            <Button type="submit" disabled={submitting || !isFormValid} className="rounded-xl gap-2 px-5 bg-blue-600 hover:bg-blue-700 text-white">
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Submitting…
+                  Sending…
                 </>
               ) : (
-                'Submit Ticket'
+                <>
+                  <Send className="w-4 h-4" />
+                  Start Chat
+                </>
               )}
             </Button>
           </div>

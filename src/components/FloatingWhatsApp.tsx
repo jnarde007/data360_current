@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, X, Headphones, Users } from 'lucide-react';
+import { MessageCircle, X, Headphones, Users, MessageSquare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
@@ -42,6 +43,7 @@ function useScrollDirection() {
 }
 
 export function FloatingWhatsApp() {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const { toasts } = useToast();
   const hasActiveToast = toasts.some(t => t.open);
@@ -103,6 +105,24 @@ export function FloatingWhatsApp() {
                 transition={{ duration: 0.2 }}
                 className="flex flex-col gap-2 mb-2"
               >
+                {/* Live On-Site Chat */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    navigate('/support?new=true');
+                  }}
+                  className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] group min-w-[200px] text-left"
+                >
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Live Support Chat</p>
+                    <p className="text-[10px] text-muted-foreground">Chat with us on-site</p>
+                  </div>
+                </button>
+
                 {supportUrl && (
                   <a
                     href={supportUrl}

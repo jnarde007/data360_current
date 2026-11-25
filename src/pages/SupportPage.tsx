@@ -88,6 +88,14 @@ export default function SupportPage() {
   useEffect(() => { loadTickets(); }, [loadTickets]);
   useRealtimeRefresh(['support_tickets' as any], loadTickets, 'customer-tickets-live');
 
+  // Auto-open new chat dialog if ?new=true
+  useEffect(() => {
+    if (searchParams.get('new') === 'true') {
+      setCreateOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   // Deep-link: auto-open ticket from ?ticket= param
   useEffect(() => {
     if (deepLinkedRef.current || loading || tickets.length === 0) return;
