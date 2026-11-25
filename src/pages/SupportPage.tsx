@@ -1,27 +1,24 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { CustomerLayout } from '@/components/CustomerLayout';
-import { supabase } from '@/integrations/supabase/client';
-import { useSearchParams } from 'react-router-dom';
-import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { CustomerLayout } from '@/components/customer/CustomerLayout';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
-import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
-import { StatusBadge } from '@/components/StatusBadge';
+import { Textarea } from '@/components/ui/textarea';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, FileText, Image as ImageIcon, X, Tag, Hash, AlertTriangle, Layers, Search, MessageSquare, Bell } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
-import { motion } from 'framer-motion';
-
-const fadeUp = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } };
+import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
+import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
+import {
+  Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip,
+  FileText, Image as ImageIcon, X, Search, MessageSquare, Receipt
+} from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
+import { useSearchParams } from 'react-router-dom';
 
 interface Ticket {
   id: string;
   short_id: string;
+  customer_id: string;
   subject: string;
   category: string;
   message: string;
@@ -31,6 +28,7 @@ interface Ticket {
   updated_at: string;
   related_order_id: string | null;
   related_wallet_transaction_id: string | null;
+  unread_count?: number;
 }
 
 interface Message {
@@ -41,13 +39,8 @@ interface Message {
   message: string;
   attachment_url: string | null;
   created_at: string;
+  read_at?: string | null;
 }
-
-const priorityColors: Record<string, string> = {
-  low: 'bg-muted text-muted-foreground',
-  medium: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  high: 'bg-destructive/10 text-destructive',
-};
 
 export default function SupportPage() {
   const { user } = useAuth();
@@ -63,21 +56,46 @@ export default function SupportPage() {
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [relatedOrderShortId, setRelatedOrderShortId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const deepLinkedRef = useRef(false);
-  const [tab, setTab] = useState<'active' | 'resolved' | 'all'>('active');
   const [search, setSearch] = useState('');
 
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const deepLinkedRef = useRef(false);
+
+  // Load user tickets and compute unread counts
   const loadTickets = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const { data, error } = await supabase
+      const { data: ticketsData, error } = await supabase
         .from('support_tickets')
         .select('*')
+        .eq('customer_id', user.id)
         .order('updated_at', { ascending: false });
+
       if (error) throw error;
-      setTickets((data || []) as any);
+      const list = (ticketsData || []) as Ticket[];
+
+      // Fetch unread messages for these tickets (messages from support not read by customer)
+      if (list.length > 0) {
+        const ticketIds = list.map(t => t.id);
+        const { data: unreadData } = await supabase
+          .from('support_messages')
+          .select('ticket_id, read_at')
+          .in('ticket_id', ticketIds)
+          .neq('sender_role', 'customer')
+          .is('read_at', null);
+
+        const unreadMap: Record<string, number> = {};
+        (unreadData || []).forEach((m: any) => {
+          unreadMap[m.ticket_id] = (unreadMap[m.ticket_id] || 0) + 1;
+        });
+
+        list.forEach(t => {
+          t.unread_count = unreadMap[t.id] || 0;
+        });
+      }
+
+      setTickets(list);
     } catch {
       // silent
     } finally {
@@ -86,17 +104,9 @@ export default function SupportPage() {
   }, [user?.id]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
-  useRealtimeRefresh(['support_tickets' as any], loadTickets, 'customer-tickets-live');
+  useRealtimeRefresh(['support_tickets' as any, 'support_messages' as any], loadTickets, 'customer-chat-live');
 
-  // Auto-open new chat dialog if ?new=true
-  useEffect(() => {
-    if (searchParams.get('new') === 'true') {
-      setCreateOpen(true);
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
-
-  // Deep-link: auto-open ticket from ?ticket= param
+  // Deep-link from notification or query
   useEffect(() => {
     if (deepLinkedRef.current || loading || tickets.length === 0) return;
     const ticketParam = searchParams.get('ticket');
@@ -119,6 +129,25 @@ export default function SupportPage() {
         .order('created_at', { ascending: true });
       if (error) throw error;
       setMessages((data || []) as any);
+
+      // Mark messages as read by customer
+      try {
+        await supabase.rpc('mark_support_messages_read' as any, {
+          p_ticket_id: ticketId,
+          p_reader_role: 'customer'
+        });
+      } catch {
+        // Fallback update if RPC not present
+        await supabase
+          .from('support_messages')
+          .update({ read_at: new Date().toISOString() } as any)
+          .eq('ticket_id', ticketId)
+          .neq('sender_role', 'customer')
+          .is('read_at', null);
+      }
+
+      // Clear local unread badge
+      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, unread_count: 0 } : t));
     } catch {
       // silent
     } finally {
@@ -141,10 +170,11 @@ export default function SupportPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Real-time messages subscription
   useEffect(() => {
     if (!selectedTicket) return;
     const channel = supabase
-      .channel(`ticket-msgs-${selectedTicket.id}`)
+      .channel(`customer-chat-${selectedTicket.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -152,14 +182,30 @@ export default function SupportPage() {
         filter: `ticket_id=eq.${selectedTicket.id}`,
       }, (payload) => {
         const msg = payload.new as any;
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
+        setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+        if (msg.sender_role !== 'customer') {
+          // Auto-mark incoming message as read since conversation is open
+          supabase
+            .from('support_messages')
+            .update({ read_at: new Date().toISOString() } as any)
+            .eq('id', msg.id)
+            .then(() => {});
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selectedTicket?.id]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Maximum file size is 5MB.', variant: 'destructive' });
+      return;
+    }
+    setAttachment(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const sendReply = async () => {
     if ((!replyText.trim() && !attachment) || !selectedTicket || !user?.id) return;
@@ -174,6 +220,7 @@ export default function SupportPage() {
         const { data: urlData } = supabase.storage.from('support-attachments').getPublicUrl(path);
         attachmentUrl = urlData.publicUrl;
       }
+
       const { error } = await supabase.from('support_messages').insert({
         ticket_id: selectedTicket.id,
         sender_id: user.id,
@@ -181,371 +228,118 @@ export default function SupportPage() {
         message: replyText.trim() || (attachmentUrl ? '[Attachment]' : ''),
         attachment_url: attachmentUrl,
       } as any);
+
       if (error) throw error;
       setReplyText('');
       setAttachment(null);
-      // No toast — message appears instantly in thread
     } catch {
-      toast({ title: 'Failed to send', description: 'Could not send your message. Please try again.', variant: 'destructive' });
+      toast({ title: 'Failed to send', description: 'Could not send message. Please try again.', variant: 'destructive' });
     } finally {
       setSending(false);
     }
   };
 
-  const reopenTicket = async () => {
-    if (!selectedTicket) return;
-    await supabase.from('support_tickets').update({ status: 'open' } as any).eq('id', selectedTicket.id);
-    setSelectedTicket(prev => prev ? { ...prev, status: 'open' } : null);
-    loadTickets();
-    toast({ title: 'Ticket reopened', description: `${selectedTicket.short_id} has been reopened.` });
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const maxSize = 5 * 1024 * 1024;
-    const allowed = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
-    if (!allowed.includes(file.type)) {
-      toast({ title: 'Invalid file type', description: 'Only PNG, JPG, WebP, and PDF files are allowed.', variant: 'destructive' });
-      return;
-    }
-    if (file.size > maxSize) {
-      toast({ title: 'File too large', description: 'Maximum file size is 5MB.', variant: 'destructive' });
-      return;
-    }
-    setAttachment(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const counts = useMemo(() => ({
-    active: tickets.filter(t => t.status === 'open' || t.status === 'pending').length,
-    resolved: tickets.filter(t => t.status === 'resolved' || t.status === 'closed').length,
-  }), [tickets]);
   const visibleTickets = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tickets.filter(t => {
-      if (tab === 'active' && !(t.status === 'open' || t.status === 'pending')) return false;
-      if (tab === 'resolved' && !(t.status === 'resolved' || t.status === 'closed')) return false;
-      if (q && !t.subject.toLowerCase().includes(q) && !t.short_id.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [tickets, tab, search]);
+    if (!q) return tickets;
+    return tickets.filter(t => t.subject.toLowerCase().includes(q) || t.short_id.toLowerCase().includes(q));
+  }, [tickets, search]);
 
-  const tabInitRef = useRef(false);
-  useEffect(() => {
-    if (tabInitRef.current || loading) return;
-    tabInitRef.current = true;
-    if (counts.active === 0) setTab('all');
-  }, [loading, counts.active]);
-
-  // ─── Ticket Thread View ───
-  let threadView: JSX.Element | null = null;
-  if (selectedTicket) {
-    const canReopen = selectedTicket.status === 'resolved' || selectedTicket.status === 'closed';
-    const canReply = selectedTicket.status !== 'closed';
-
-    threadView = (
-        <div className="space-y-4">
-          {/* ── Compact Ticket Header Bar ── */}
-          <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-3.5 sm:p-4 shadow-sm space-y-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => { setSelectedTicket(null); setMessages([]); setRelatedOrderShortId(null); }}
-                  className="h-8 w-8 shrink-0 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-                  title="Back to Tickets"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
-                      #{selectedTicket.short_id}
-                    </span>
-                    <h1 className="text-sm sm:text-base font-semibold text-foreground truncate">{selectedTicket.subject}</h1>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <StatusBadge status={selectedTicket.status} />
-                {canReopen && (
-                  <Button variant="outline" size="sm" onClick={reopenTicket} className="h-7 text-xs px-2.5">
-                    Reopen
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Tags / Meta inline row */}
-            <div className="flex items-center gap-2 flex-wrap text-xs pt-2 border-t border-border/40">
-              <Badge variant="outline" className={`text-[10px] capitalize ${priorityColors[selectedTicket.priority]}`}>
-                {selectedTicket.priority} Priority
-              </Badge>
-              <Badge variant="secondary" className="text-[10px]">
-                {selectedTicket.category}
-              </Badge>
-              {relatedOrderShortId && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/5 text-primary border border-primary/15 text-[10px] font-mono font-medium">
-                  🧾 Order: #{relatedOrderShortId}
-                </span>
-              )}
-              {selectedTicket.related_wallet_transaction_id && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/5 text-primary border border-primary/15 text-[10px] font-mono font-medium">
-                  💳 Wallet Txn
-                </span>
-              )}
-              <span className="ml-auto text-[10px] text-muted-foreground/60 hidden sm:inline">
-                {format(new Date(selectedTicket.created_at), 'dd MMM yyyy, h:mm a')}
-              </span>
-            </div>
-          </div>
-
-          {/* ── Chat Messages Stream ── */}
-          <div className="space-y-4 pt-2 pb-1">
-            {/* Initial customer message (outgoing on right for customer) */}
-            <div className="flex justify-end gap-2.5 items-end">
-              <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
-                <div className="flex items-center justify-end gap-2 px-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">You</span>
-                  <span className="text-[10px] text-muted-foreground/50">
-                    {format(new Date(selectedTicket.created_at), 'dd MMM, h:mm a')}
-                  </span>
-                </div>
-                <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#3b82f6]/90 text-white shadow-sm shadow-sm">
-                  <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
-                </div>
-              </div>
-              <div className="shrink-0 w-7 h-7 rounded-full bg-blue-600/15 border border-blue-500/25 flex items-center justify-center shadow-sm">
-                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">Y</span>
-              </div>
-            </div>
-
-            {/* Replies Thread */}
-            {messagesLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-            ) : messages.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-xs text-muted-foreground/50">Our support team has received your ticket and will respond soon.</p>
-              </div>
-            ) : (
-              messages.map(m => {
-                const isCustomer = m.sender_role === 'customer';
-                const senderLabel = isCustomer ? 'You' : 'Support';
-                const avatarLetter = isCustomer ? 'Y' : 'S';
-
-                if (isCustomer) {
-                  return (
-                    <div key={m.id} className="flex justify-end gap-2.5 items-end">
-                      <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
-                        <div className="flex items-center justify-end gap-2 px-1">
-                          <span className="text-[11px] font-medium text-muted-foreground">{senderLabel}</span>
-                          <span className="text-[10px] text-muted-foreground/50">
-                            {format(new Date(m.created_at), 'h:mm a')}
-                          </span>
-                        </div>
-                        <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#3b82f6]/90 text-white shadow-sm shadow-sm">
-                          {m.attachment_url && (
-                            <div className="mb-2 p-1.5 rounded-lg bg-white/10 backdrop-blur-xs">
-                              <AttachmentRenderer url={m.attachment_url} />
-                            </div>
-                          )}
-                          {m.message && m.message !== '[Attachment]' && (
-                            <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{m.message}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="shrink-0 w-7 h-7 rounded-full bg-blue-600/15 border border-blue-500/25 flex items-center justify-center shadow-sm">
-                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">{avatarLetter}</span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={m.id} className="flex justify-start gap-2.5 items-end">
-                    <div className="shrink-0 w-7 h-7 rounded-full bg-muted border border-border/70 flex items-center justify-center shadow-sm">
-                      <span className="text-[10px] font-bold text-muted-foreground">{avatarLetter}</span>
-                    </div>
-                    <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
-                      <div className="flex items-center gap-2 px-1">
-                        <span className="text-[11px] font-medium text-foreground">{senderLabel}</span>
-                        <span className="text-[10px] text-muted-foreground/50">
-                          {format(new Date(m.created_at), 'h:mm a')}
-                        </span>
-                      </div>
-                      <div className="rounded-2xl rounded-bl-xs px-4 py-2.5 bg-slate-100 dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/60 shadow-sm">
-                        {m.attachment_url && (
-                          <div className="mb-2">
-                            <AttachmentRenderer url={m.attachment_url} />
-                          </div>
-                        )}
-                        {m.message && m.message !== '[Attachment]' && (
-                          <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{m.message}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* ── Reply Composer ── */}
-          {canReply && (
-            <Card className="overflow-hidden border-border/50 shadow-sm">
-              <CardContent className="p-0">
-                {attachment && (
-                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-border/30 bg-muted/30">
-                    {attachment.type.startsWith('image/') ? (
-                      <ImageIcon className="w-4 h-4 text-muted-foreground shrink-0" />
-                    ) : (
-                      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-                    )}
-                    <span className="truncate text-foreground text-xs font-medium">{attachment.name}</span>
-                    <span className="text-muted-foreground/50 text-[10px] shrink-0">
-                      ({(attachment.size / 1024).toFixed(0)} KB)
-                    </span>
-                    <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 p-1 rounded-md hover:bg-muted transition-colors">
-                      <X className="w-3.5 h-3.5 text-muted-foreground" />
-                    </button>
-                  </div>
-                )}
-
-                <div className="p-3">
-                  <Textarea
-                    placeholder="Type a message..."
-                    value={replyText}
-                    onChange={e => setReplyText(e.target.value)}
-                    rows={2}
-                    className="resize-none border-0 shadow-none focus-visible:ring-0 px-1 text-[13px]"
-                    maxLength={2000}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendReply();
-                      }
-                    }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between px-3 pb-3">
-                  <div className="flex items-center gap-1">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".png,.jpg,.jpeg,.webp,.pdf"
-                      className="hidden"
-                      onChange={handleFileSelect}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground/60 hover:text-muted-foreground"
-                      onClick={() => fileInputRef.current?.click()}
-                      title="Attach file"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={sendReply}
-                    disabled={sending || (!replyText.trim() && !attachment)}
-                    className="h-8 px-4 gap-1.5 text-xs"
-                  >
-                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    Send
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {selectedTicket.status === 'closed' && (
-            <p className="text-xs text-center text-muted-foreground/50 py-3">This ticket is closed. Reopen it to continue the conversation.</p>
-          )}
-        </div>
+  const AttachmentRenderer = ({ url }: { url: string }) => {
+    const isImg = /\.(png|jpe?g|webp|gif)$/i.test(url);
+    if (isImg) {
+      return (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block max-w-xs rounded-xl overflow-hidden shadow-sm hover:opacity-90 transition-opacity">
+          <img src={url} alt="Attachment" className="max-h-48 rounded-xl object-cover" />
+        </a>
+      );
+    }
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/60 text-xs text-primary font-medium hover:bg-muted transition-colors">
+        <FileText className="w-4 h-4 shrink-0" /> Open Attachment
+      </a>
     );
-  }
+  };
 
-  // ─── Inbox + Thread Workspace ───
   return (
     <CustomerLayout>
-      <div className="space-y-5 pb-24 lg:pb-0">
-        <div className={`${selectedTicket ? 'hidden lg:flex' : 'flex'} items-center justify-between gap-3`}>
+      <div className="space-y-4 max-w-5xl mx-auto pb-10">
+        {/* Top Header */}
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl lg:text-2xl font-display font-bold text-foreground">Support</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">We're here to help with orders, payments and your account</p>
+            <h1 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-foreground">Messages</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">Chat directly with our support team</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5 shrink-0">
-            <Plus className="w-4 h-4" /> New Ticket
+          <Button onClick={() => setCreateOpen(true)} className="gap-2 h-9 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+            <Plus className="w-4 h-4" /> New Message
           </Button>
         </div>
 
-        <div className="lg:grid lg:grid-cols-[minmax(300px,380px)_1fr] lg:gap-5 lg:items-start">
-          {/* Inbox */}
-          <div className={`${selectedTicket ? 'hidden lg:block' : 'block'} space-y-3 lg:sticky lg:top-24`}>
+        {/* Main 2-Column Chat View */}
+        <div className="lg:grid lg:grid-cols-[minmax(300px,360px)_1fr] lg:gap-5 lg:items-start">
+          {/* Left Column: WhatsApp-style Conversation List */}
+          <div className={`${selectedTicket ? 'hidden lg:block' : 'block'} space-y-2 lg:sticky lg:top-24`}>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10 pointer-events-none" />
-              <Input placeholder="Search by subject or ticket no." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-10 text-sm rounded-xl" />
-            </div>
-            <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/60">
-              {([['active', 'Active', counts.active], ['resolved', 'Resolved', counts.resolved], ['all', 'All', tickets.length]] as const).map(([key, label, n]) => (
-                <button key={key} onClick={() => setTab(key)}
-                  className={`h-8 rounded-lg text-xs font-semibold transition-colors ${tab === key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {label} <span className="ml-0.5 opacity-60">{n}</span>
-                </button>
-              ))}
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search conversations..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-9 h-10 text-xs rounded-xl bg-card"
+              />
             </div>
 
             {loading ? (
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
             ) : visibleTickets.length === 0 ? (
-              <div className="text-center py-12 glass-card">
-                <LifeBuoy className="w-10 h-10 mx-auto text-muted-foreground/30 mb-3" />
-                <p className="text-sm font-medium text-muted-foreground">
-                  {tickets.length === 0 ? 'No support tickets yet' : search ? 'No tickets match your search' : tab === 'active' ? 'No active tickets' : 'No tickets here'}
-                </p>
-                {tickets.length === 0 && (
-                  <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-1.5">
-                    <Plus className="w-4 h-4" /> Report an Issue
-                  </Button>
-                )}
+              <div className="text-center py-12 rounded-2xl border border-dashed border-border/70 p-6 bg-card/40">
+                <MessageSquare className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
+                <p className="text-sm font-semibold text-foreground">No conversations yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Need help with an order or payment? Send us a message.</p>
+                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
+                  <Plus className="w-3.5 h-3.5" /> Start Chat
+                </Button>
               </div>
             ) : (
-              <div className="space-y-2 lg:max-h-[calc(100vh-17rem)] lg:overflow-y-auto lg:pr-1">
+              <div className="space-y-1.5 lg:max-h-[calc(100vh-16rem)] lg:overflow-y-auto lg:pr-1">
                 {visibleTickets.map(t => {
                   const active = selectedTicket?.id === t.id;
+                  const unread = (t.unread_count || 0) > 0;
                   return (
-                    <button key={t.id} onClick={() => openTicket(t)}
-                      className={`w-full text-left rounded-2xl border p-3.5 transition-colors ${active ? 'border-primary/40 bg-primary/5' : 'border-border/50 bg-card hover:bg-muted/40'}`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold text-foreground truncate">{t.subject}</p>
-                        {t.status === 'open' || t.status === 'pending' ? (
-                            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px] font-semibold border border-amber-500/20 shrink-0">
-                              <Bell className="w-3 h-3 fill-amber-500 shrink-0" />
-                              <span>Active</span>
-                            </span>
-                          ) : t.status === 'resolved' ? (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-medium border border-emerald-500/20 shrink-0">
-                              Resolved
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-medium shrink-0">
-                              Closed
-                            </span>
-                          )}
+                    <button
+                      key={t.id}
+                      onClick={() => openTicket(t)}
+                      className={`w-full text-left rounded-2xl border p-3.5 transition-all flex items-center gap-3 ${
+                        active
+                          ? 'border-emerald-500/40 bg-emerald-500/5 shadow-xs'
+                          : 'border-border/50 bg-card hover:bg-muted/40'
+                      }`}
+                    >
+                      {/* Avatar with unread indicator */}
+                      <div className="relative shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                          {t.subject ? t.subject.slice(0, 1).toUpperCase() : 'S'}
+                        </div>
+                        {unread && (
+                          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">
+                            {t.unread_count}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{t.message}</p>
-                      <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground/70">
-                        <span className="font-mono">{t.short_id}</span>
-                        <span>·</span>
-                        <span className="truncate">{t.category}</span>
-                        <span className="ml-auto shrink-0">{formatDistanceToNow(new Date(t.updated_at), { addSuffix: true })}</span>
+
+                      {/* Content preview */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <p className={`text-xs truncate ${unread ? 'font-bold text-foreground' : 'font-semibold text-foreground/90'}`}>
+                            {t.subject || 'Support Conversation'}
+                          </p>
+                          <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                            {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true })}
+                          </span>
+                        </div>
+                        <p className={`text-[11px] truncate ${unread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                          {t.message}
+                        </p>
                       </div>
                     </button>
                   );
@@ -554,17 +348,166 @@ export default function SupportPage() {
             )}
           </div>
 
-          {/* Conversation */}
+          {/* Right Column: Live Conversation Thread */}
           <div className={selectedTicket ? 'block' : 'hidden lg:block'}>
-            {threadView ?? (
-              <div className="glass-card flex flex-col items-center justify-center text-center py-24 px-6">
-                <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-                  <MessageSquare className="w-6 h-6 text-primary" />
+            {selectedTicket ? (
+              <div className="rounded-2xl border border-border/60 bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden flex flex-col h-[75vh] min-h-[500px]">
+                {/* Chat Header Bar */}
+                <div className="px-4 py-3 border-b border-border/50 bg-card/90 flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => { setSelectedTicket(null); setMessages([]); }}
+                      className="h-8 w-8 rounded-lg lg:hidden"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
+                      S
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">{selectedTicket.subject}</p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Customer Support</p>
+                    </div>
+                  </div>
+
+                  {relatedOrderShortId && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground shrink-0">
+                      <Receipt className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Order #{relatedOrderShortId}</span>
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm font-semibold text-foreground">Select a ticket</p>
-                <p className="text-xs text-muted-foreground mt-1 max-w-xs">Pick a ticket on the left to view the conversation, or open a new one if you need help.</p>
-                <Button onClick={() => setCreateOpen(true)} variant="outline" size="sm" className="mt-4 gap-1.5">
-                  <Plus className="w-4 h-4" /> New Ticket
+
+                {/* Messages Stream */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
+                  {/* First message from ticket creation */}
+                  <div className="flex justify-end gap-2 items-end">
+                    <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
+                      <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#2563eb]/90 text-white shadow-xs">
+                        <p className="text-xs whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
+                      </div>
+                      <p className="text-[9px] text-muted-foreground/50 text-right px-1">
+                        {format(new Date(selectedTicket.created_at), 'dd MMM, h:mm a')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Replies Thread */}
+                  {messagesLoading ? (
+                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+                  ) : (
+                    messages.map(m => {
+                      const isCustomer = m.sender_role === 'customer';
+                      if (isCustomer) {
+                        return (
+                          <div key={m.id} className="flex justify-end gap-2 items-end">
+                            <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
+                              <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#2563eb]/90 text-white shadow-xs">
+                                {m.attachment_url && (
+                                  <div className="mb-2 p-1 rounded-lg bg-white/10">
+                                    <AttachmentRenderer url={m.attachment_url} />
+                                  </div>
+                                )}
+                                {m.message && m.message !== '[Attachment]' && (
+                                  <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                                )}
+                              </div>
+                              <p className="text-[9px] text-muted-foreground/50 text-right px-1">
+                                {format(new Date(m.created_at), 'h:mm a')}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Support reply (Left side)
+                      return (
+                        <div key={m.id} className="flex justify-start gap-2 items-end">
+                          <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-[9px] shrink-0 mb-4">
+                            S
+                          </div>
+                          <div className="max-w-[85%] sm:max-w-[70%] space-y-1">
+                            <div className="rounded-2xl rounded-bl-xs px-4 py-2.5 bg-card border border-border/70 text-foreground shadow-xs">
+                              {m.attachment_url && (
+                                <div className="mb-2">
+                                  <AttachmentRenderer url={m.attachment_url} />
+                                </div>
+                              )}
+                              {m.message && m.message !== '[Attachment]' && (
+                                <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                              )}
+                            </div>
+                            <p className="text-[9px] text-muted-foreground/50 px-1">
+                              Support · {format(new Date(m.created_at), 'h:mm a')}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Reply Composer */}
+                <div className="p-3 border-t border-border/50 bg-card shrink-0">
+                  {attachment && (
+                    <div className="flex items-center justify-between mb-2 px-3 py-1.5 rounded-xl bg-muted/60 text-xs">
+                      <span className="truncate max-w-[260px] text-muted-foreground">{attachment.name}</span>
+                      <button type="button" onClick={() => setAttachment(null)} className="text-destructive">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); sendReply(); }}
+                    className="flex items-center gap-2"
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      accept=".png,.jpg,.jpeg,.webp,.pdf"
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </Button>
+                    <Input
+                      placeholder="Type a message..."
+                      value={replyText}
+                      onChange={e => setReplyText(e.target.value)}
+                      className="h-10 text-xs rounded-xl bg-muted/40 border-border/60"
+                    />
+                    <Button
+                      type="submit"
+                      disabled={sending || (!replyText.trim() && !attachment)}
+                      size="icon"
+                      className="h-10 w-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs"
+                    >
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    </Button>
+                  </form>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/70 p-12 text-center bg-card/40 flex flex-col items-center justify-center min-h-[400px]">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
+                  <MessageSquare className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-semibold text-foreground">Select a conversation</h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  Choose a chat on the left to read messages and reply, or start a new conversation.
+                </p>
+                <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-4 gap-2 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
+                  <Plus className="w-3.5 h-3.5" /> Start New Chat
                 </Button>
               </div>
             )}
