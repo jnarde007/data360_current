@@ -19,53 +19,46 @@ export function BundleTile({
 }: Props) {
   const isMTN = network === 'MTN';
   const isTelecel = network === 'Telecel';
-  const isAT = network === 'AirtelTigo';
 
-  // 1. OUT OF STOCK STATE — elegant muted card with strikethrough
+  // 1. OUT OF STOCK STATE — Clean muted grey card with strikethrough
   if (!isAvailable) {
     return (
       <div
         role="button"
         aria-disabled="true"
-        className="relative overflow-hidden flex flex-col items-center justify-between min-h-[102px] rounded-2xl p-2.5 bg-muted/60 border border-dashed border-border/80 opacity-60 cursor-not-allowed select-none text-center"
+        className="relative overflow-hidden flex flex-col items-center justify-center gap-1 min-h-[88px] rounded-2xl p-3 bg-muted/60 border border-dashed border-border/70 opacity-55 cursor-not-allowed select-none text-center"
       >
-        <span className="text-sm font-bold text-muted-foreground mt-1">{size}</span>
-        <span className="text-xs font-semibold text-muted-foreground line-through">{price}</span>
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-destructive/15 text-destructive border border-destructive/20">
+        <span className="text-sm font-bold text-muted-foreground">{size}</span>
+        <span className="text-xs font-medium text-muted-foreground line-through">{price}</span>
+        <span className="mt-0.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-destructive/15 text-destructive border border-destructive/20">
           Out of stock
         </span>
       </div>
     );
   }
 
-  // 2. STYLING BY NETWORK — Maximum contrast & elegant gradient
+  // 2. LUXURY BRAND GRADIENTS & HIGH CONTRAST (Style 1)
   const theme = isMTN
     ? {
-        cardBg: 'bg-gradient-to-br from-amber-400 via-yellow-400 to-amber-500 border-amber-500/40 shadow-[0_6px_20px_-6px_rgba(245,158,11,0.45)]',
+        cardBg: 'bg-gradient-to-b from-[#FBBF24] via-[#F59E0B] to-[#D97706] border-amber-300/40 shadow-[0_4px_16px_-4px_rgba(217,119,6,0.35)]',
         sizeText: 'text-slate-950 font-black',
-        priceText: 'text-slate-900/90 font-bold',
-        pillBg: 'bg-black/10 border-black/10 text-slate-950',
-        dotBg: 'bg-emerald-600',
+        priceText: 'text-slate-950/85 font-extrabold',
         checkBg: 'bg-slate-950 text-amber-400',
         activeRing: 'ring-3 ring-offset-2 ring-slate-950 ring-offset-background scale-[1.03]',
       }
     : isTelecel
     ? {
-        cardBg: 'bg-gradient-to-br from-rose-500 via-red-500 to-rose-600 border-red-500/30 shadow-[0_6px_20px_-6px_rgba(225,29,72,0.45)]',
+        cardBg: 'bg-gradient-to-b from-rose-500 via-red-600 to-rose-700 border-red-400/30 shadow-[0_4px_16px_-4px_rgba(225,29,72,0.35)]',
         sizeText: 'text-white font-black',
-        priceText: 'text-white/95 font-bold',
-        pillBg: 'bg-white/15 border-white/20 text-white',
-        dotBg: 'bg-emerald-300',
+        priceText: 'text-rose-100 font-extrabold',
         checkBg: 'bg-white text-red-600',
         activeRing: 'ring-3 ring-offset-2 ring-red-600 ring-offset-background scale-[1.03]',
       }
     : {
-        // AirtelTigo
-        cardBg: 'bg-gradient-to-br from-blue-500 via-sky-500 to-blue-600 border-blue-500/30 shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)]',
+        // AirtelTigo: Rich Royal Sapphire & Cobalt Blue
+        cardBg: 'bg-gradient-to-b from-[#2563EB] via-[#1D4ED8] to-[#1E3A8A] border-blue-400/30 shadow-[0_4px_16px_-4px_rgba(29,78,216,0.35)]',
         sizeText: 'text-white font-black',
-        priceText: 'text-white/95 font-bold',
-        pillBg: 'bg-white/15 border-white/20 text-white',
-        dotBg: 'bg-emerald-300',
+        priceText: 'text-blue-100 font-extrabold',
         checkBg: 'bg-white text-blue-600',
         activeRing: 'ring-3 ring-offset-2 ring-blue-600 ring-offset-background scale-[1.03]',
       };
@@ -76,14 +69,14 @@ export function BundleTile({
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className={`relative overflow-hidden flex flex-col items-center justify-between min-h-[102px] rounded-2xl p-2.5 transition-all duration-200 cursor-pointer select-none border active:scale-[0.98] ${theme.cardBg} ${
+      className={`relative overflow-hidden flex flex-col items-center justify-center gap-1 min-h-[88px] rounded-2xl p-3 transition-all duration-150 cursor-pointer select-none border active:scale-[0.98] ${theme.cardBg} ${
         active
           ? `${theme.activeRing} shadow-lg z-10`
           : 'opacity-95 hover:opacity-100 hover:-translate-y-0.5 hover:shadow-md'
       }`}
     >
-      {/* Glossy top-right corner reflection */}
-      <span className="pointer-events-none absolute -top-8 -right-8 w-18 h-18 rounded-full bg-white/20 blur-[1px]" />
+      {/* Subtle glossy card highlight in top corner */}
+      <span className="pointer-events-none absolute -top-10 -right-10 w-24 h-24 rounded-full bg-white/15 blur-[2px]" />
 
       {/* Selected Checkmark Badge */}
       {active && (
@@ -93,22 +86,13 @@ export function BundleTile({
       )}
 
       {/* Bundle Size */}
-      <span className={`text-base sm:text-lg tracking-tight leading-tight pt-0.5 ${theme.sizeText}`}>
+      <span className={`text-base sm:text-lg tracking-tight leading-none drop-shadow-xs ${theme.sizeText}`}>
         {size}
       </span>
 
       {/* Bundle Price */}
-      <span className={`text-xs tracking-tight ${theme.priceText}`}>
+      <span className={`text-xs sm:text-[13px] tracking-tight leading-none mt-0.5 ${theme.priceText}`}>
         {price}
-      </span>
-
-      {/* Clean "In Stock" Status Pill */}
-      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-xs ${theme.pillBg}`}>
-        <span className="relative flex h-1.5 w-1.5">
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${theme.dotBg}`} />
-          <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${theme.dotBg}`} />
-        </span>
-        In stock
       </span>
     </button>
   );
