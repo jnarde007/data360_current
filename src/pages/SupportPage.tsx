@@ -4,15 +4,13 @@ import { CustomerLayout } from '@/components/CustomerLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useSearchParams } from 'react-router-dom';
 import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, FileText, Image as ImageIcon, X, Search, MessageSquare, CheckCheck, Clock } from 'lucide-react';
+import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, X, Search, MessageSquare, CheckCheck } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
 interface Ticket {
@@ -36,6 +34,7 @@ interface Message {
   sender_role: string;
   message: string;
   attachment_url: string | null;
+  read_at?: string | null;
   created_at: string;
 }
 
@@ -44,6 +43,7 @@ export default function SupportPage() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -64,6 +64,27 @@ export default function SupportPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const loadUnreadCounts = useCallback(async (ticketIds: string[]) => {
+    if (!ticketIds.length) return;
+    try {
+      const { data, error } = await supabase
+        .from('support_messages')
+        .select('ticket_id')
+        .in('ticket_id', ticketIds)
+        .eq('sender_role', 'admin')
+        .is('read_at', null);
+
+      if (error) return;
+      const counts: Record<string, number> = {};
+      data?.forEach((m: any) => {
+        counts[m.ticket_id] = (counts[m.ticket_id] || 0) + 1;
+      });
+      setUnreadMap(counts);
+    } catch (err) {
+      console.error('Failed to load unread counts:', err);
+    }
+  }, []);
+
   const loadTickets = useCallback(async () => {
     if (!user) return;
     try {
@@ -74,13 +95,17 @@ export default function SupportPage() {
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
-      setTickets((data as Ticket[]) || []);
+      const list = (data as Ticket[]) || [];
+      setTickets(list);
+      if (list.length > 0) {
+        loadUnreadCounts(list.map(t => t.id));
+      }
     } catch (err: any) {
       console.error('Failed to load tickets:', err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, loadUnreadCounts]);
 
   useEffect(() => {
     loadTickets();
@@ -92,6 +117,19 @@ export default function SupportPage() {
       loadMessages(selectedTicket.id);
     }
   });
+
+  const markAsRead = async (ticketId: string) => {
+    try {
+      await supabase.rpc('mark_support_messages_read', { p_ticket_id: ticketId });
+      setUnreadMap(prev => {
+        const next = { ...prev };
+        delete next[ticketId];
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to mark read:', err);
+    }
+  };
 
   const loadMessages = async (ticketId: string) => {
     setMessagesLoading(true);
@@ -105,6 +143,7 @@ export default function SupportPage() {
       if (error) throw error;
       setMessages((data as Message[]) || []);
       setTimeout(scrollToBottom, 100);
+      markAsRead(ticketId);
     } catch (err: any) {
       console.error('Failed to load messages:', err);
     } finally {
@@ -172,7 +211,6 @@ export default function SupportPage() {
         .getPublicUrl(path);
       return publicUrl;
     } catch (err: any) {
-      console.error('Failed to upload attachment:', err);
       toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
       return null;
     } finally {
@@ -266,7 +304,6 @@ export default function SupportPage() {
   return (
     <CustomerLayout>
       <div className="space-y-4 pb-20 md:pb-0">
-        {/* Header (hidden on mobile when thread is open) */}
         <div className={`${selectedTicket ? 'hidden md:flex' : 'flex'} items-center justify-between gap-3`}>
           <div>
             <h1 className="text-xl md:text-2xl font-display font-bold text-foreground">Support Messages</h1>
@@ -277,12 +314,11 @@ export default function SupportPage() {
           </Button>
         </div>
 
-        {/* Unified Chat Container (Split view down to md screen width) */}
+        {/* WhatsApp-style Split Layout (maintains side-by-side view down to md width) */}
         <div className="md:grid md:grid-cols-[minmax(270px,320px)_1fr] lg:grid-cols-[minmax(310px,360px)_1fr] md:gap-4 md:items-start">
           
-          {/* ── LEFT PANE: Inbox list ── */}
+          {/* Inbox List */}
           <div className={`${selectedTicket ? 'hidden md:block' : 'block'} space-y-2.5 md:sticky md:top-20`}>
-            {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
               <Input
@@ -293,7 +329,6 @@ export default function SupportPage() {
               />
             </div>
 
-            {/* Filter Tabs */}
             <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/60 border border-border/40">
               {([['active', 'Active', counts.active], ['resolved', 'Resolved', counts.resolved], ['all', 'All', tickets.length]] as const).map(([key, label, n]) => (
                 <button
@@ -310,7 +345,6 @@ export default function SupportPage() {
               ))}
             </div>
 
-            {/* Chat List Items */}
             {loading ? (
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
             ) : filteredTickets.length === 0 ? (
@@ -328,6 +362,7 @@ export default function SupportPage() {
                 {filteredTickets.map(t => {
                   const active = selectedTicket?.id === t.id;
                   const initial = t.subject.trim().charAt(0).toUpperCase() || 'S';
+                  const unread = unreadMap[t.id] || 0;
                   return (
                     <button
                       key={t.id}
@@ -338,7 +373,6 @@ export default function SupportPage() {
                           : 'bg-card border-border/50 hover:bg-muted/40 hover:border-border'
                       }`}
                     >
-                      {/* Avatar initial */}
                       <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs ${
                         active
                           ? 'bg-primary text-primary-foreground'
@@ -347,15 +381,16 @@ export default function SupportPage() {
                         {initial}
                       </div>
 
-                      {/* Content preview */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <p className="text-xs font-semibold text-foreground truncate">{t.subject}</p>
+                          <p className={`text-xs truncate ${unread > 0 ? 'font-bold text-foreground' : 'font-semibold text-foreground'}`}>
+                            {t.subject}
+                          </p>
                           <span className="text-[10px] text-muted-foreground/70 shrink-0 font-medium">
                             {formatDistanceToNow(new Date(t.updated_at), { addSuffix: false })}
                           </span>
                         </div>
-                        <p className="text-[11px] text-muted-foreground line-clamp-1 leading-snug">
+                        <p className={`text-[11px] line-clamp-1 leading-snug ${unread > 0 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
                           {t.message}
                         </p>
                         <div className="flex items-center gap-2 mt-1.5">
@@ -363,11 +398,15 @@ export default function SupportPage() {
                             {t.short_id}
                           </span>
                           <span className="text-[10px] capitalize text-muted-foreground/60">{t.category}</span>
-                          {t.status === 'resolved' && (
+                          {unread > 0 ? (
+                            <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold rounded-full bg-rose-500 text-white shadow-sm">
+                              {unread}
+                            </span>
+                          ) : t.status === 'resolved' ? (
                             <span className="ml-auto text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-0.5">
                               <CheckCheck className="w-3 h-3" /> Resolved
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     </button>
@@ -377,11 +416,10 @@ export default function SupportPage() {
             )}
           </div>
 
-          {/* ── RIGHT PANE: Conversation Thread ── */}
+          {/* Chat Pane */}
           <div className={`${selectedTicket ? 'block' : 'hidden md:block'} rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm flex flex-col h-[calc(100vh-10rem)] min-h-[500px]`}>
             {selectedTicket ? (
               <>
-                {/* Slim Header */}
                 <div className="px-4 py-3 border-b border-border/50 bg-muted/20 flex items-center justify-between gap-3 shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Button
@@ -416,9 +454,7 @@ export default function SupportPage() {
                   </div>
                 </div>
 
-                {/* Message Scroll Area */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
-                  {/* First Ticket Description Message */}
                   <div className="flex justify-end mb-2">
                     <div className="max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-sm px-3.5 py-2.5 bg-primary/15 border border-primary/20 text-foreground shadow-sm">
                       <p className="text-xs whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
@@ -429,7 +465,6 @@ export default function SupportPage() {
                     </div>
                   </div>
 
-                  {/* Replies Thread */}
                   {messagesLoading ? (
                     <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
                   ) : (
@@ -467,7 +502,6 @@ export default function SupportPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Modern Pill Composer */}
                 {canReply ? (
                   <form onSubmit={handleSend} className="p-2.5 border-t border-border/50 bg-card shrink-0">
                     {attachment && (
@@ -521,7 +555,6 @@ export default function SupportPage() {
                 )}
               </>
             ) : (
-              /* Empty state placeholder when no chat is selected on desktop */
               <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                 <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
                   <MessageSquare className="w-7 h-7 text-primary" />
