@@ -313,7 +313,7 @@ export default function SupportPage() {
                     {format(new Date(selectedTicket.created_at), 'dd MMM, h:mm a')}
                   </span>
                 </div>
-                <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-blue-600 text-white shadow-sm">
+                <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#3b82f6]/90 text-white shadow-sm shadow-sm">
                   <p className="text-[13px] whitespace-pre-wrap leading-relaxed">{selectedTicket.message}</p>
                 </div>
               </div>
@@ -345,7 +345,7 @@ export default function SupportPage() {
                             {format(new Date(m.created_at), 'h:mm a')}
                           </span>
                         </div>
-                        <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-blue-600 text-white shadow-sm">
+                        <div className="rounded-2xl rounded-br-xs px-4 py-2.5 bg-[#3b82f6]/90 text-white shadow-sm shadow-sm">
                           {m.attachment_url && (
                             <div className="mb-2 p-1.5 rounded-lg bg-white/10 backdrop-blur-xs">
                               <AttachmentRenderer url={m.attachment_url} />
