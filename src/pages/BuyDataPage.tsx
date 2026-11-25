@@ -817,19 +817,7 @@ export default function BuyDataPage() {
           </div>
 
           {/* Network OFF â€” delivery halted notice */}
-          {selectedNetwork && networkAvailability[selectedNetwork] === false && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/[0.08] p-3.5 flex items-start gap-2.5" role="alert">
-              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-amber-700 dark:text-amber-300">
-                  {selectedNetwork} delivery is currently halted
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                  Delivery is currently halted due to network issues. New purchases are paused and any existing pending orders will be delivered automatically once service is restored.
-                </p>
-              </div>
-            </div>
-          )}
+          {/* Halted banner removed */}
 
           {/* MTN Notice â€” collapsible */}
           {selectedNetwork === 'MTN' && (
