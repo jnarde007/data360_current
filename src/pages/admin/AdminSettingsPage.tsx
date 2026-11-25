@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Eye, EyeOff, Loader2, Lock, ShieldCheck, Mail, Send, ExternalLink , Megaphone } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Lock, ShieldCheck, Mail, Send, Megaphone, Check } from 'lucide-react';
 import { APP_BUILD_TIME, APP_VERSION_LABEL } from '@/lib/app-version';
 import { DiagnosticsApprovalCard } from '@/components/admin/DiagnosticsApprovalCard';
 
@@ -21,10 +22,6 @@ interface Settings {
   notification_sender_name: string;
   send_email_on_approval: string;
   send_email_on_verification: string;
-  announcement_enabled: string;
-  announcement_title: string;
-  announcement_message: string;
-  announcement_type: string;
 }
 
 const defaultSettings: Settings = {
@@ -38,10 +35,6 @@ const defaultSettings: Settings = {
   notification_sender_name: 'DATA360',
   send_email_on_approval: 'false',
   send_email_on_verification: 'false',
-  announcement_enabled: 'false',
-  announcement_title: 'Scheduled Maintenance Notice',
-  announcement_message: 'MTN delivery is temporarily paused for maintenance and will resume on the 1st. Telecel and AirtelTigo orders remain instant.',
-  announcement_type: 'warning',
 };
 
 export default function AdminSettingsPage() {
@@ -50,6 +43,14 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Dedicated Announcement State
+  const [announcementEnabled, setAnnouncementEnabled] = useState(false);
+  const [announcementTitle, setAnnouncementTitle] = useState('Important Update');
+  const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [announcementType, setAnnouncementType] = useState<'warning' | 'destructive' | 'info'>('warning');
+  const [savingAnnouncement, setSavingAnnouncement] = useState(false);
+
+  // Password state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -67,6 +68,19 @@ export default function AdminSettingsPage() {
         const loaded: Record<string, string> = {};
         data.forEach((row: { key: string; value: string }) => { loaded[row.key] = row.value; });
         setSettings(prev => ({ ...prev, ...loaded }));
+
+        if (loaded.announcement_enabled !== undefined) {
+          setAnnouncementEnabled(loaded.announcement_enabled === 'true');
+        }
+        if (loaded.announcement_title !== undefined) {
+          setAnnouncementTitle(loaded.announcement_title);
+        }
+        if (loaded.announcement_message !== undefined) {
+          setAnnouncementMessage(loaded.announcement_message);
+        }
+        if (loaded.announcement_type !== undefined) {
+          setAnnouncementType((loaded.announcement_type as any) || 'warning');
+        }
       }
     } catch {
       toast({ title: 'Unable to load settings', description: 'Please refresh the page and try again.', variant: 'destructive' });
@@ -75,6 +89,42 @@ export default function AdminSettingsPage() {
     }
   };
 
+  // Dedicated Announcement Saver
+  const handleSaveAnnouncement = async () => {
+    setSavingAnnouncement(true);
+    try {
+      const updates = [
+        { key: 'announcement_enabled', value: announcementEnabled ? 'true' : 'false' },
+        { key: 'announcement_title', value: announcementTitle },
+        { key: 'announcement_message', value: announcementMessage },
+        { key: 'announcement_type', value: announcementType },
+      ];
+
+      for (const item of updates) {
+        const { error } = await supabase
+          .from('platform_settings')
+          .update({ value: item.value, updated_at: new Date().toISOString() })
+          .eq('key', item.key);
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'Announcement updated',
+        description: 'Site announcement settings have been saved successfully.',
+        variant: 'success'
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Failed to save announcement',
+        description: err?.message || 'Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingAnnouncement(false);
+    }
+  };
+
+  // General Settings Saver (does NOT touch announcement)
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -85,7 +135,7 @@ export default function AdminSettingsPage() {
           .eq('key', key);
         if (error) throw error;
       }
-      toast({ title: 'Settings saved successfully', description: 'All platform settings have been updated.', variant: 'success' });
+      toast({ title: 'Settings saved successfully', description: 'General platform settings have been updated.', variant: 'success' });
     } catch {
       toast({ title: 'Failed to save settings', description: 'An error occurred while saving. Please try again.', variant: 'destructive' });
     } finally {
@@ -124,7 +174,6 @@ export default function AdminSettingsPage() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  // Auto-save access control toggles immediately
   const toggleAndSave = async (key: keyof Settings, checked: boolean) => {
     const value = checked ? 'true' : 'false';
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -136,7 +185,6 @@ export default function AdminSettingsPage() {
       if (error) throw error;
       toast({ title: 'Setting updated', description: 'The setting has been saved successfully.', variant: 'success' });
     } catch {
-      // Revert on failure
       setSettings(prev => ({ ...prev, [key]: checked ? 'false' : 'true' }));
       toast({ title: 'Failed to save setting', description: 'The change could not be applied. Please try again.', variant: 'destructive' });
     }
@@ -157,6 +205,124 @@ export default function AdminSettingsPage() {
       <div className="max-w-2xl space-y-6">
         <h1 className="text-2xl font-display font-bold text-foreground">Platform Settings</h1>
 
+        {/* Site Announcement & Maintenance Ticker Card */}
+        <div className="glass-card glow-border p-5 space-y-5 border-amber-500/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500">
+                <Megaphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-display font-semibold text-foreground">Site Announcement</h2>
+                <p className="text-xs text-muted-foreground">Live ticker banner and popup dialog for maintenance & updates</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                {announcementEnabled ? 'Active' : 'Disabled'}
+              </span>
+              <Switch
+                checked={announcementEnabled}
+                onCheckedChange={setAnnouncementEnabled}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-2 border-t border-border/50">
+            <div>
+              <Label className="text-xs font-semibold">Banner Severity & Style</Label>
+              <div className="grid grid-cols-3 gap-2 mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementType('warning')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                    announcementType === 'warning'
+                      ? 'bg-amber-500/15 border-amber-500 text-amber-700 dark:text-amber-300 shadow-sm ring-1 ring-amber-500'
+                      : 'border-border text-muted-foreground hover:bg-muted/40'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                  Warning (Amber)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementType('destructive')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                    announcementType === 'destructive'
+                      ? 'bg-rose-500/15 border-rose-500 text-rose-700 dark:text-rose-300 shadow-sm ring-1 ring-rose-500'
+                      : 'border-border text-muted-foreground hover:bg-muted/40'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                  Urgent (Red)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementType('info')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                    announcementType === 'info'
+                      ? 'bg-blue-500/15 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm ring-1 ring-blue-500'
+                      : 'border-border text-muted-foreground hover:bg-muted/40'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                  Info (Blue)
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="ann-title" className="text-xs font-semibold">Announcement Title</Label>
+              <Input
+                id="ann-title"
+                value={announcementTitle}
+                onChange={e => setAnnouncementTitle(e.target.value)}
+                placeholder="e.g. Important Update / Maintenance Notice"
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="ann-msg" className="text-xs font-semibold">Announcement Message</Label>
+              <Textarea
+                id="ann-msg"
+                value={announcementMessage}
+                onChange={e => setAnnouncementMessage(e.target.value)}
+                placeholder="e.g. MTN delivery is temporarily paused for maintenance and will resume on the 1st of December..."
+                rows={3}
+                className="mt-1 text-sm"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Scrolls continuously on the top ticker banner and shows in full when customers tap to read.
+              </p>
+            </div>
+
+            {/* DEDICATED ANNOUNCEMENT SAVE BUTTON */}
+            <div className="pt-2 flex justify-end">
+              <Button
+                type="button"
+                onClick={handleSaveAnnouncement}
+                disabled={savingAnnouncement}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs h-9 px-4 rounded-lg gap-2 shadow-sm"
+              >
+                {savingAnnouncement ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving Announcement...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    Save Announcement
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+
         {/* Customer Access Control */}
         <div className="glass-card glow-border p-5 space-y-5">
           <div className="flex items-center gap-2">
@@ -166,7 +332,6 @@ export default function AdminSettingsPage() {
           <p className="text-xs text-muted-foreground">Control how new customers gain access to the platform. Both toggles are independent and can be combined.</p>
 
           <div className="space-y-4">
-            {/* Require Email Verification */}
             <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
               <div className="flex items-start gap-3">
                 <Mail className="w-5 h-5 text-primary mt-0.5 shrink-0" />
@@ -183,7 +348,6 @@ export default function AdminSettingsPage() {
               />
             </div>
 
-            {/* Require Admin Approval */}
             <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-primary mt-0.5 shrink-0" />
@@ -200,19 +364,6 @@ export default function AdminSettingsPage() {
               />
             </div>
           </div>
-
-          {/* Current mode summary */}
-          <div className="rounded-lg bg-muted/50 p-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              Current mode:{' '}
-              <span className="text-foreground">
-                {settings.require_email_verification !== 'true' && settings.require_admin_approval !== 'true' && 'Open access — customers can sign up and use the platform immediately.'}
-                {settings.require_email_verification === 'true' && settings.require_admin_approval !== 'true' && 'Email verification required before access.'}
-                {settings.require_email_verification !== 'true' && settings.require_admin_approval === 'true' && 'Admin approval required before access.'}
-                {settings.require_email_verification === 'true' && settings.require_admin_approval === 'true' && 'Email verification + admin approval required before access.'}
-              </span>
-            </p>
-          </div>
         </div>
 
         {/* Email Notifications */}
@@ -222,19 +373,17 @@ export default function AdminSettingsPage() {
             <h2 className="text-lg font-display font-semibold text-foreground">Email Notifications</h2>
           </div>
           <p className="text-xs text-muted-foreground">
-            Configure email notifications sent to customers when their account is approved or email is verified. Set up a custom email domain first by asking Lovable to "set up a custom email domain".
+            Configure email notifications sent to customers when their account is approved or email is verified.
           </p>
 
           <div className="space-y-4">
             <div>
               <Label>Sender Email Address</Label>
               <Input value={settings.notification_sender_email} onChange={e => updateSetting('notification_sender_email', e.target.value)} placeholder="e.g. notify@yourdomain.com" className="mt-1" />
-              <p className="text-[11px] text-muted-foreground mt-1">The email address notifications will be sent from. Requires a verified custom email domain.</p>
             </div>
             <div>
               <Label>Sender Display Name</Label>
               <Input value={settings.notification_sender_name} onChange={e => updateSetting('notification_sender_name', e.target.value)} placeholder="e.g. DATA360" className="mt-1" />
-              <p className="text-[11px] text-muted-foreground mt-1">The name shown in the "From" field of notification emails.</p>
             </div>
           </div>
 
@@ -267,27 +416,6 @@ export default function AdminSettingsPage() {
               />
             </div>
           </div>
-
-          {!settings.notification_sender_email && (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <Mail className="w-4 h-4 text-primary" />
-                </div>
-                <p className="text-sm font-semibold text-foreground">Setup Required</p>
-              </div>
-              <div className="text-xs text-muted-foreground space-y-2">
-                <p>To send email notifications, complete these steps:</p>
-                <ol className="list-decimal list-inside space-y-1.5 ml-1">
-                  <li>Open the Lovable chat and type: <span className="font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded">"set up a custom email domain"</span></li>
-                  <li>Follow the instructions to add DNS records at your domain registrar</li>
-                  <li>Wait for DNS verification (can take up to 72 hours)</li>
-                  <li>Come back here and enter your <strong className="text-foreground">Sender Email</strong> and <strong className="text-foreground">Display Name</strong></li>
-                  <li>Toggle on the notifications you want to send</li>
-                </ol>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Change Password */}
@@ -325,78 +453,9 @@ export default function AdminSettingsPage() {
           </Button>
         </div>
 
-                {/* Site Announcement Ticker */}
-        <div className="glass-card glow-border p-5 space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Megaphone className="w-5 h-5 text-primary" />
-              <div>
-                <h2 className="text-lg font-display font-semibold text-foreground">Announcement & Ticker Banner</h2>
-                <p className="text-xs text-muted-foreground">Display a live scrolling ticker across all public and customer pages.</p>
-              </div>
-            </div>
-            <Switch
-              checked={settings.announcement_enabled === 'true'}
-              onCheckedChange={(checked) => updateSetting('announcement_enabled', checked ? 'true' : 'false')}
-            />
-          </div>
-
-          {settings.announcement_enabled === 'true' && (
-            <div className="space-y-4 pt-2 border-t border-border/40">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label>Badge Title</Label>
-                  <Input
-                    value={settings.announcement_title}
-                    onChange={(e) => updateSetting('announcement_title', e.target.value)}
-                    placeholder="e.g. MAINTENANCE or NOTICE"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Banner Color / Severity</Label>
-                  <select
-                    value={settings.announcement_type}
-                    onChange={(e) => updateSetting('announcement_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 mt-1"
-                  >
-                    <option value="warning">Amber (Maintenance / Warning)</option>
-                    <option value="destructive">Red (Emergency / Critical)</option>
-                    <option value="info">Blue (Update / Information)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <Label>Announcement Message</Label>
-                <textarea
-                  value={settings.announcement_message}
-                  onChange={(e) => updateSetting('announcement_message', e.target.value)}
-                  placeholder="Enter the message you want customers to read..."
-                  rows={2}
-                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 mt-1"
-                />
-              </div>
-
-              <div className="rounded-lg p-3 bg-muted/40 border border-border/50 space-y-2">
-                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Live Preview:</span>
-                <div className={`w-full h-8 px-3 rounded flex items-center overflow-hidden text-xs font-semibold ${
-                  settings.announcement_type === 'destructive' ? 'bg-rose-600 text-white' :
-                  settings.announcement_type === 'info' ? 'bg-blue-600 text-white' : 'bg-amber-500 text-amber-950'
-                }`}>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mr-2 bg-black/20">
-                    {settings.announcement_title || 'NOTICE'}
-                  </span>
-                  <span className="truncate">{settings.announcement_message}</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* General Settings */}
         <div className="glass-card glow-border p-5 space-y-5">
-          <h2 className="text-lg font-display font-semibold text-foreground">General</h2>
+          <h2 className="text-lg font-display font-semibold text-foreground">General Platform Details</h2>
           <div>
             <Label>Brand Name</Label>
             <Input value={settings.brand_name} onChange={e => updateSetting('brand_name', e.target.value)} className="mt-1" />
@@ -418,14 +477,16 @@ export default function AdminSettingsPage() {
             <span className="mx-2">·</span>
             Built {new Date(APP_BUILD_TIME).toLocaleString()}
           </div>
+
+          <div className="pt-2">
+            <Button onClick={handleSave} disabled={saving} className="gradient-primary text-primary-foreground border-0 gap-2">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Save General Details
+            </Button>
+          </div>
         </div>
 
         <DiagnosticsApprovalCard />
-
-        <Button onClick={handleSave} disabled={saving} className="gradient-primary text-primary-foreground border-0 gap-2">
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-          Save Settings
-        </Button>
       </div>
     </AdminLayout>
   );
