@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -51,7 +51,7 @@
     --amber: 34 95% 53%;
     --amber-foreground: 0 0% 10%;
 
-    /* Premium shadow system — soft, layered, diffused */
+    /* Premium shadow system â€” soft, layered, diffused */
     --shadow-xs: 0 1px 2px 0 hsl(235 35% 55% / 0.05);
     --shadow-sm: 0 2px 8px -3px hsl(235 35% 55% / 0.1), 0 1px 2px -1px hsl(235 35% 55% / 0.06);
     --shadow-md: 0 10px 28px -12px hsl(235 35% 55% / 0.2), 0 4px 12px -6px hsl(29 96% 56% / 0.12);
@@ -117,14 +117,14 @@
     --amber: 34 95% 60%;
     --amber-foreground: 0 0% 10%;
 
-    /* Dark shadows — deeper but still diffused */
+    /* Dark shadows â€” deeper but still diffused */
     --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.15);
     --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.2), 0 1px 2px -1px hsl(0 0% 0% / 0.15);
     --shadow-md: 0 4px 14px -3px hsl(0 0% 0% / 0.28), 0 2px 6px -2px hsl(0 0% 0% / 0.18);
     --shadow-lg: 0 10px 32px -8px hsl(0 0% 0% / 0.35), 0 4px 14px -4px hsl(0 0% 0% / 0.2);
     --shadow-xl: 0 20px 44px -10px hsl(0 0% 0% / 0.45), 0 8px 22px -6px hsl(0 0% 0% / 0.25);
 
-    /* Dark card tints — very subtle */
+    /* Dark card tints â€” very subtle */
     --card-radius: 1.25rem;
     --card-radius-lg: 1.5rem;
     --card-border: 232 18% 19%;
@@ -157,7 +157,7 @@
 }
 
 @layer base {
-  /* ─── Cross-browser theme lock ───
+  /* â”€â”€â”€ Cross-browser theme lock â”€â”€â”€
      Prevents Samsung Internet "Dark Mode for Web", Chrome Android "Auto Dark Theme",
      and Edge mobile from inverting our colors. We declare color-scheme to match the
      actually-applied theme so the browser knows we handle dark mode ourselves. */
@@ -229,7 +229,7 @@
     border-color: hsl(var(--primary) / 0.35);
     transform: translateY(-2px);
   }
-  /* Don't apply hover-lift to centered overlays (dialogs/sheets/popovers) —
+  /* Don't apply hover-lift to centered overlays (dialogs/sheets/popovers) â€”
      they rely on their own translate to stay positioned. */
   [data-radix-dialog-content].premium-card,
   [data-radix-alert-dialog-content].premium-card,
@@ -246,7 +246,7 @@
     transform: translate(-50%, -50%);
   }
 
-  /* ─── Dialog / Alert / Sheet solid backgrounds ───
+  /* â”€â”€â”€ Dialog / Alert / Sheet solid backgrounds â”€â”€â”€
      Overlays need a fully opaque background so backdrop content can't bleed
      through and hurt readability. Apply the .modal-solid utility on any
      popup surface (dialog, alert-dialog, sheet, drawer). */
@@ -270,7 +270,7 @@
     box-shadow: var(--shadow-xl), inset 0 1px 0 0 hsl(0 0% 100% / 0.05) !important;
   }
 
-  /* ─── Premium Card System ─── */
+  /* â”€â”€â”€ Premium Card System â”€â”€â”€ */
   .glass-card {
     background:
       linear-gradient(145deg, hsl(var(--card) / 0.95) 0%, hsl(var(--card-tint-primary) / 0.55) 55%, hsl(var(--card-tint-teal) / 0.45) 100%);
@@ -356,7 +356,7 @@
     @apply text-sm text-muted-foreground mt-1;
   }
 
-  /* Auth pages – theme-aware (light: clean off-white, dark: navy) */
+  /* Auth pages â€“ theme-aware (light: clean off-white, dark: navy) */
   .auth-bg-gradient {
     background:
       linear-gradient(145deg, hsl(var(--primary) / 0.08) 0%, transparent 36%),
@@ -531,13 +531,13 @@
     );
   }
 
-  /* Inner detail panel — used inside cards for breakdowns, summaries */
+  /* Inner detail panel â€” used inside cards for breakdowns, summaries */
   .card-inner-panel {
     border-radius: calc(var(--card-radius) - 4px);
     @apply bg-muted/30 border border-border/40;
   }
 
-  /* Modal-specific inner panel — light blue tint for clear layer separation */
+  /* Modal-specific inner panel â€” light blue tint for clear layer separation */
   .detail-inner-panel {
     border-radius: calc(var(--card-radius) - 4px);
     background: hsl(210 50% 94%);
@@ -548,7 +548,7 @@
     border-color: hsl(215 18% 21%);
   }
 
-  /* ─── Icon Container System ─── */
+  /* â”€â”€â”€ Icon Container System â”€â”€â”€ */
   /* Reusable icon boxes with stronger contrast against card surfaces */
   .icon-box {
     @apply flex items-center justify-center shrink-0;
@@ -562,7 +562,7 @@
   .icon-box-2xl { @apply w-14 h-14; border-radius: calc(var(--card-radius) - 4px); }
   .icon-box-round { @apply rounded-full; }
 
-  /* Accent variants — stronger fill + visible border */
+  /* Accent variants â€” stronger fill + visible border */
   .icon-box-primary   { @apply bg-primary/15 text-primary border-primary/20; }
   .icon-box-success   { @apply bg-success/15 text-success border-success/20; }
   .icon-box-warning   { @apply bg-warning/15 text-warning border-warning/20; }
@@ -577,7 +577,7 @@
     @apply border-t border-border/30;
   }
 
-  /* WhatsApp button pulse – CSS-only, GPU-composited */
+  /* WhatsApp button pulse â€“ CSS-only, GPU-composited */
   @keyframes wa-pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.4); }
     50% { box-shadow: 0 0 0 10px rgba(37, 211, 102, 0); }
@@ -625,7 +625,7 @@
 .animate-ticker-marquee {
   display: inline-block;
   white-space: nowrap;
-  animation: tickerMarquee 26s linear infinite;
+  animation: tickerMarquee 50s linear infinite;
   will-change: transform;
 }
 
