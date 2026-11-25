@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { CustomerLayout } from '@/components/CustomerLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Loader2, Send, Paperclip, MessageSquare, Trash2, 
-  ExternalLink, CheckCheck, RefreshCw, Headphones, Calendar
+import {
+  Loader2, Send, Paperclip, MessageSquare, Trash2,
+  ExternalLink, CheckCheck, RefreshCw, Headphones, Calendar, Flag, X
 } from 'lucide-react';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 
@@ -33,7 +34,11 @@ function formatChatDateBadge(date: Date): string {
 export default function SupportPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [ticketId, setTicketId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const urlTicketId = searchParams.get('ticket');
+
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [ticketId, setTicketId] = useState<string | null>(urlTicketId);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -41,8 +46,15 @@ export default function SupportPage() {
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  
+
+  // Report to Admin modal state
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState('Order / Bundle Issue');
+  const [reportDetails, setReportDetails] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -53,44 +65,81 @@ export default function SupportPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'end' });
   }, []);
 
-  const initChat = useCallback(async () => {
-    if (!user?.id) return;
+  const resolveCustomerAndTicket = useCallback(async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const { data: custData } = await supabase
+      let resolvedCustId: string | null = null;
+
+      const { data: custData, error: custErr } = await supabase
         .from('customers')
         .select('id')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (!custData) return;
+      if (!custErr && custData?.id) {
+        resolvedCustId = custData.id;
+        setCustomerId(custData.id);
+      }
 
-      const { data: canonicalTicketId } = await supabase.rpc(
-        'get_or_create_customer_chat',
-        { p_customer_id: custData.id }
-      );
+      if (urlTicketId) {
+        setTicketId(urlTicketId);
+        return;
+      }
 
-      if (canonicalTicketId) {
-        setTicketId(canonicalTicketId);
-      } else {
-        const { data: tkt } = await supabase
+      if (resolvedCustId) {
+        const { data: rpcTicket, error: rpcErr } = await supabase.rpc(
+          'get_or_create_customer_chat',
+          { p_customer_id: resolvedCustId }
+        );
+
+        if (!rpcErr && rpcTicket) {
+          const idVal = typeof rpcTicket === 'string' ? rpcTicket : (rpcTicket as any)?.id || (rpcTicket as any)?.ticket_id;
+          if (idVal) {
+            setTicketId(idVal);
+            return;
+          }
+        }
+
+        const { data: latestTicket } = await supabase
           .from('support_tickets')
           .select('id')
-          .eq('customer_id', custData.id)
-          .order('created_at', { ascending: true })
+          .eq('customer_id', resolvedCustId)
+          .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (tkt?.id) setTicketId(tkt.id);
+        if (latestTicket?.id) {
+          setTicketId(latestTicket.id);
+          return;
+        }
+      }
+
+      // Fallback if ticket is linked directly to auth user_id
+      const { data: directTicket } = await supabase
+        .from('support_tickets')
+        .select('id')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (directTicket?.id) {
+        setTicketId(directTicket.id);
       }
     } catch (err: any) {
       console.error('Error initializing support chat:', err);
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, urlTicketId]);
 
-  useEffect(() => { initChat(); }, [initChat]);
+  useEffect(() => {
+    resolveCustomerAndTicket();
+  }, [resolveCustomerAndTicket]);
 
   const loadMessages = useCallback(async (tId: string) => {
     try {
@@ -104,14 +153,18 @@ export default function SupportPage() {
       if (error) throw error;
       setMessages((data || []) as Message[]);
 
-      // Snap to bottom immediately on chat open
       setTimeout(() => scrollToBottom(true), 30);
       setTimeout(() => scrollToBottom(true), 150);
 
-      await supabase.rpc('mark_support_messages_read', {
-        p_ticket_id: tId,
-        p_reader_role: 'customer'
-      });
+      // Isolate read RPC so a 400 never hides loaded history
+      try {
+        await supabase.rpc('mark_support_messages_read', {
+          p_ticket_id: tId,
+          p_reader_role: 'customer'
+        });
+      } catch (readErr) {
+        console.warn('mark_support_messages_read skipped/failed:', readErr);
+      }
     } catch (err: any) {
       console.error('Error loading messages:', err);
     } finally {
@@ -123,7 +176,6 @@ export default function SupportPage() {
     if (ticketId) loadMessages(ticketId);
   }, [ticketId, loadMessages]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!ticketId) return;
 
@@ -149,7 +201,7 @@ export default function SupportPage() {
             supabase.rpc('mark_support_messages_read', {
               p_ticket_id: ticketId,
               p_reader_role: 'customer'
-            });
+            }).catch(() => {});
           }
         }
       )
@@ -174,12 +226,49 @@ export default function SupportPage() {
     };
   }, [ticketId, scrollToBottom]);
 
+  const ensureTicketExists = useCallback(async (): Promise<string | null> => {
+    if (ticketId) return ticketId;
+    const ownerId = customerId || user?.id;
+    if (!ownerId) return null;
+
+    if (customerId) {
+      const { data: rpcTicket, error: rpcErr } = await supabase.rpc(
+        'get_or_create_customer_chat',
+        { p_customer_id: customerId }
+      );
+      if (!rpcErr && rpcTicket) {
+        const idVal = typeof rpcTicket === 'string' ? rpcTicket : (rpcTicket as any)?.id || (rpcTicket as any)?.ticket_id;
+        if (idVal) {
+          setTicketId(idVal);
+          return idVal;
+        }
+      }
+    }
+
+    const { data: created, error: createErr } = await supabase
+      .from('support_tickets')
+      .insert({ customer_id: ownerId, subject: 'Live Support Chat', status: 'open' })
+      .select('id')
+      .single();
+
+    if (!createErr && created?.id) {
+      setTicketId(created.id);
+      return created.id;
+    }
+    return null;
+  }, [ticketId, customerId, user?.id]);
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if ((!replyText.trim() && !attachment) || !ticketId || sending) return;
+    if ((!replyText.trim() && !attachment) || sending) return;
 
     setSending(true);
     try {
+      const activeTicketId = await ensureTicketExists();
+      if (!activeTicketId) {
+        throw new Error('Could not find or create a support ticket for your account.');
+      }
+
       let attachmentUrl: string | null = null;
       if (attachment) {
         const ext = attachment.name.split('.').pop();
@@ -196,26 +285,24 @@ export default function SupportPage() {
         }
       }
 
-      const { data: custData } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      const senderId = custData?.id || user?.id || 'customer';
-
-      const { error: insertErr } = await supabase
+      const senderId = customerId || user?.id || 'customer';
+      const { data: inserted, error: insertErr } = await supabase
         .from('support_messages')
         .insert({
-          ticket_id: ticketId,
+          ticket_id: activeTicketId,
           sender_id: senderId,
           sender_role: 'customer',
           message: replyText.trim() || (attachmentUrl ? '[Attachment]' : ''),
           attachment_url: attachmentUrl,
-        });
+        })
+        .select('*')
+        .single();
 
       if (insertErr) throw insertErr;
 
+      if (inserted) {
+        setMessages((prev) => (prev.some((m) => m.id === inserted.id) ? prev : [...prev, inserted as Message]));
+      }
       setReplyText('');
       setAttachment(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -224,6 +311,48 @@ export default function SupportPage() {
       toast({ title: 'Message failed', description: err.message, variant: 'destructive' });
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleReportToAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportDetails.trim() || submittingReport) return;
+
+    setSubmittingReport(true);
+    try {
+      const activeTicketId = await ensureTicketExists();
+      if (!activeTicketId) {
+        throw new Error('Unable to open a support ticket to send your report.');
+      }
+
+      const formattedReport = `[REPORT TO ADMIN - ${reportCategory}]\n${reportDetails.trim()}`;
+      const senderId = customerId || user?.id || 'customer';
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('support_messages')
+        .insert({
+          ticket_id: activeTicketId,
+          sender_id: senderId,
+          sender_role: 'customer',
+          message: formattedReport,
+          attachment_url: null,
+        })
+        .select('*')
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      if (inserted) {
+        setMessages((prev) => (prev.some((m) => m.id === inserted.id) ? prev : [...prev, inserted as Message]));
+      }
+      setReportDetails('');
+      setReportOpen(false);
+      toast({ title: 'Report sent to admin', description: 'Your report has been delivered to the support team.' });
+      setTimeout(() => scrollToBottom(true), 50);
+    } catch (err: any) {
+      toast({ title: 'Report failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setSubmittingReport(false);
     }
   };
 
@@ -251,18 +380,18 @@ export default function SupportPage() {
 
   return (
     <CustomerLayout>
-      <div className="max-w-4xl mx-auto h-[calc(100vh-8.5rem)] min-h-[500px] flex flex-col bg-background rounded-2xl border shadow-sm overflow-hidden">
+      <div className="max-w-4xl mx-auto h-[calc(100dvh-7.5rem)] min-h-[480px] flex flex-col bg-background rounded-2xl border shadow-sm overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-3.5 border-b bg-card/80 backdrop-blur-sm flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative">
+        <div className="px-4 sm:px-5 py-3 border-b bg-card/80 backdrop-blur-sm flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative shrink-0">
               <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
                 <Headphones className="w-5 h-5" />
               </div>
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
             </div>
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Data360 Live Support</h2>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-foreground truncate">Data360 Live Support</h2>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Support Team • Online
@@ -270,14 +399,37 @@ export default function SupportPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
-              onClick={() => ticketId && loadMessages(ticketId)}
+              type="button"
+              onClick={() => composerInputRef.current?.focus()}
+              className="hidden md:inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Live Support
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setReportOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+            >
+              <Flag className="w-3.5 h-3.5" />
+              Report to Admin
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (ticketId) loadMessages(ticketId);
+                else resolveCustomerAndTicket();
+              }}
               className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
               title="Refresh messages"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
+
             <a
               href="https://wa.me/233538804961"
               target="_blank"
@@ -291,7 +443,7 @@ export default function SupportPage() {
         </div>
 
         {/* Message Container with Auto-Scroll to Bottom */}
-        <div 
+        <div
           ref={scrollContainerRef}
           className="flex-1 p-4 md:p-6 overflow-y-auto bg-muted/20 space-y-3"
         >
@@ -307,8 +459,16 @@ export default function SupportPage() {
               </div>
               <h3 className="text-sm font-medium text-foreground mb-1">Welcome to Data360 Support</h3>
               <p className="text-xs text-muted-foreground mb-4">
-                Have a question about an order, bundle, or top-up? Send us a message below and our team will assist you shortly.
+                Have a question about an order, bundle, or top-up? Send a live message below or report an issue to admin.
               </p>
+              <button
+                type="button"
+                onClick={() => setReportOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25 transition-colors"
+              >
+                <Flag className="w-3.5 h-3.5" />
+                Report an Issue to Admin
+              </button>
             </div>
           ) : (
             messages.map((msg, index) => {
@@ -319,7 +479,6 @@ export default function SupportPage() {
 
               return (
                 <div key={msg.id} className="space-y-3">
-                  {/* SMS / WhatsApp Centered Date Badge */}
                   {showDateBadge && (
                     <div className="flex justify-center my-4 select-none">
                       <div className="px-3.5 py-1 rounded-full bg-slate-200/90 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-xs border border-border/50 flex items-center gap-1.5">
@@ -329,10 +488,8 @@ export default function SupportPage() {
                     </div>
                   )}
 
-                  {/* Message Row with Delete ALWAYS ON THE LEFT of the bubble */}
                   <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} my-1`}>
                     <div className="flex items-center gap-2 max-w-[85%] sm:max-w-[75%]">
-                      {/* Delete Icon on the LEFT */}
                       {isMe && (
                         <button
                           type="button"
@@ -352,7 +509,6 @@ export default function SupportPage() {
                             : 'bg-card text-card-foreground border border-border/60 rounded-bl-xs'
                         }`}
                       >
-                        {/* Blue Sender Name for Incoming Messages */}
                         {!isMe && (
                           <div className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-1">
                             Data360 Support
@@ -367,7 +523,6 @@ export default function SupportPage() {
                           </div>
                         )}
 
-                        {/* Stamped Date & Time inside bubble */}
                         <div
                           className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] select-none ${
                             isMe ? 'text-primary-foreground/75' : 'text-muted-foreground'
@@ -397,6 +552,7 @@ export default function SupportPage() {
           <div className="px-4 py-2 bg-muted/40 border-t flex items-center justify-between text-xs">
             <span className="truncate max-w-xs font-medium text-foreground">📎 {attachment.name}</span>
             <button
+              type="button"
               onClick={() => {
                 setAttachment(null);
                 if (fileInputRef.current) fileInputRef.current.value = '';
@@ -409,7 +565,7 @@ export default function SupportPage() {
         )}
 
         {/* Composer */}
-        <form onSubmit={handleSendMessage} className="p-3 bg-card border-t flex items-center gap-2">
+        <form onSubmit={handleSendMessage} className="p-3 bg-card border-t flex items-center gap-2 shrink-0">
           <input
             type="file"
             ref={fileInputRef}
@@ -430,6 +586,7 @@ export default function SupportPage() {
           </button>
 
           <input
+            ref={composerInputRef}
             type="text"
             value={replyText}
             onChange={(e) => setReplyText(e.target.value)}
@@ -447,6 +604,77 @@ export default function SupportPage() {
           </button>
         </form>
       </div>
+
+      {/* Report to Admin Modal */}
+      {reportOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-card text-card-foreground border rounded-2xl shadow-lg w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Flag className="w-4 h-4 text-amber-600" />
+                <h3 className="text-sm font-semibold">Report Issue to Admin</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReportOpen(false)}
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReportToAdmin} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Issue Category
+                </label>
+                <select
+                  value={reportCategory}
+                  onChange={(e) => setReportCategory(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="Order / Bundle Issue">Order / Bundle Issue</option>
+                  <option value="Payment / Top-up Issue">Payment / Top-up Issue</option>
+                  <option value="Account / Login Issue">Account / Login Issue</option>
+                  <option value="Other Report">Other Report</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Details for Admin
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  placeholder="Include your phone number, transaction/order reference, and what happened..."
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setReportOpen(false)}
+                  className="px-3.5 py-1.5 rounded-lg border text-xs font-medium hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!reportDetails.trim() || submittingReport}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-40"
+                >
+                  {submittingReport && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Submit Report
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </CustomerLayout>
   );
 }
