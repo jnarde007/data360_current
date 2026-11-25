@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Send, Search, Paperclip, MessageSquare, RefreshCw, Trash2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, Search, Paperclip, MessageSquare, RefreshCw, Trash2, LifeBuoy } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 
@@ -238,9 +238,10 @@ export default function AdminSupportPage() {
     return Object.values(unreadMap).reduce((acc, count) => acc + (count > 0 ? 1 : 0), 0);
   }, [unreadMap]);
 
-  const filteredTickets = useMemo(() => {
+  const visibleTickets = useMemo(() => {
     return tickets.filter(t => {
-      if (tab === 'unread' && !(unreadMap[t.id] > 0)) return false;
+      const isUnread = (unreadMap[t.id] || 0) > 0;
+      if (tab === 'unread' && !isUnread) return false;
       if (search) {
         const q = search.toLowerCase();
         const customer = customersMap[t.customer_id];
@@ -285,12 +286,14 @@ export default function AdminSupportPage() {
 
             <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/60">
               <button
+                type="button"
                 onClick={() => setTab('all')}
                 className={`h-8 rounded-lg text-xs font-semibold transition-all ${tab === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 All <span className="ml-1 opacity-60">({tickets.length})</span>
               </button>
               <button
+                type="button"
                 onClick={() => setTab('unread')}
                 className={`h-8 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${tab === 'unread' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
@@ -305,7 +308,7 @@ export default function AdminSupportPage() {
 
             {loading ? (
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-            ) : filteredTickets.length === 0 ? (
+            ) : visibleTickets.length === 0 ? (
               <div className="text-center py-12 rounded-2xl border border-dashed border-border/60 p-6 bg-card">
                 <LifeBuoy className="w-9 h-9 mx-auto text-muted-foreground/30 mb-2" />
                 <p className="text-xs font-medium text-muted-foreground">
@@ -314,7 +317,7 @@ export default function AdminSupportPage() {
               </div>
             ) : (
               <div className="space-y-1.5 max-h-[calc(100vh-16rem)] overflow-y-auto pr-1">
-                {filteredTickets.map(t => {
+                {visibleTickets.map(t => {
                   const active = selectedTicket?.id === t.id;
                   const customer = customersMap[t.customer_id];
                   const unreadCount = unreadMap[t.id] || 0;
@@ -322,6 +325,7 @@ export default function AdminSupportPage() {
 
                   return (
                     <button
+                      type="button"
                       key={t.id}
                       onClick={() => openTicket(t)}
                       className={`w-full text-left rounded-xl border p-3 transition-all ${active ? 'border-primary/50 bg-primary/5 shadow-xs' : 'border-border/40 bg-card hover:bg-muted/40'}`}
@@ -423,9 +427,10 @@ export default function AdminSupportPage() {
                       const isAdmin = m.sender_role === 'admin';
                       return (
                         <div key={m.id} className={`flex group items-center gap-1.5 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                          {/* Trash button for Admin (admins can delete any message) */}
+                          {/* Trash button for Admin */}
                           {isAdmin ? (
                             <button
+                              type="button"
                               onClick={() => deleteMessage(m.id)}
                               title="Delete message"
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
@@ -452,9 +457,9 @@ export default function AdminSupportPage() {
                             </p>
                           </div>
 
-                          {/* Trash button for customer messages when viewed by Admin */}
                           {!isAdmin ? (
                             <button
+                              type="button"
                               onClick={() => deleteMessage(m.id)}
                               title="Delete customer message"
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
