@@ -13,7 +13,7 @@ import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, FileText, Image as ImageIcon, X, Tag, Hash, AlertTriangle, Layers, Search, MessageSquare } from 'lucide-react';
+import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Paperclip, FileText, Image as ImageIcon, X, Tag, Hash, AlertTriangle, Layers, Search, MessageSquare, Bell } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { motion } from 'framer-motion';
 
@@ -525,7 +525,20 @@ export default function SupportPage() {
                       className={`w-full text-left rounded-2xl border p-3.5 transition-colors ${active ? 'border-primary/40 bg-primary/5' : 'border-border/50 bg-card hover:bg-muted/40'}`}>
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-sm font-semibold text-foreground truncate">{t.subject}</p>
-                        <StatusBadge status={t.status} />
+                        {t.status === 'open' || t.status === 'pending' ? (
+                            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px] font-semibold border border-amber-500/20 shrink-0">
+                              <Bell className="w-3 h-3 fill-amber-500 shrink-0" />
+                              <span>Active</span>
+                            </span>
+                          ) : t.status === 'resolved' ? (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-medium border border-emerald-500/20 shrink-0">
+                              Resolved
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-medium shrink-0">
+                              Closed
+                            </span>
+                          )}
                       </div>
                       <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{t.message}</p>
                       <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground/70">
