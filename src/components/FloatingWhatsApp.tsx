@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MessageCircle, X, Headphones, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,117 +43,125 @@ function useScrollDirection() {
 
 export function FloatingWhatsApp() {
   const location = useLocation();
-  const isSupportPage = location.pathname.startsWith("/support") || location.pathname.startsWith("/admin/support");
-  if (isSupportPage) return null;
-  const location = useLocation();
+  const isSupportPage = location.pathname.startsWith('/support') || location.pathname.startsWith('/admin/support');
+
   const [open, setOpen] = useState(false);
-  const [urls, setUrls] = useState({ support: '', channel: '' });
-  const [loading, setLoading] = useState(true);
+  const { toasts } = useToast();
+  const hasActiveToast = toasts.some(t => t.open);
+  const [supportUrl, setSupportUrl] = useState('');
+  const [channelUrl, setChannelUrl] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const scrollVisible = useScrollDirection();
-  const { toast } = useToast();
 
-  const fetchUrls = useCallback(async () => {
-    try {
-      const { data } = await supabase
-        .from('platform_settings')
-        .select('key, value')
-        .in('key', ['whatsapp_support_url', 'whatsapp_channel_url']);
-
-      if (data) {
-        const map = Object.fromEntries(data.map(r => [r.key, r.value]));
-        setUrls({
-          support: map.whatsapp_support_url || '',
-          channel: map.whatsapp_channel_url || '',
+  const fetchUrls = useCallback(() => {
+    supabase
+      .from('platform_settings')
+      .select('key, value')
+      .in('key', ['support_whatsapp_url', 'whatsapp_channel_url'])
+      .then(({ data }) => {
+        data?.forEach((r: { key: string; value: string }) => {
+          if (r.key === 'support_whatsapp_url') setSupportUrl(r.value || '');
+          if (r.key === 'whatsapp_channel_url') setChannelUrl(r.value || '');
         });
-      }
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-    }
+        setLoaded(true);
+      });
   }, []);
 
-  useEffect(() => {
-    fetchUrls();
-  }, [fetchUrls]);
-
+  useEffect(() => { fetchUrls(); }, [fetchUrls]);
   useRealtimeRefresh(['platform_settings'], fetchUrls, 'whatsapp-settings');
 
-  // Completely hide on support and admin support pages so it never blocks the chat screen
-  if (location.pathname.startsWith('/support') || location.pathname.startsWith('/admin/support')) {
-    return null;
-  }
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
 
-  const hasAny = urls.support || urls.channel;
-  if (loading || !hasAny) return null;
+  if (isSupportPage) return null;
+  if (loaded && !supportUrl && !channelUrl) return null;
 
-  const handleClick = (url: string, label: string) => {
-    if (!url) {
-      toast({ title: 'Not Available', description: `${label} link is not configured yet.`, variant: 'destructive' });
-      return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
-    setOpen(false);
-  };
+  const shouldShow = !hasActiveToast && (scrollVisible || open);
 
   return (
     <AnimatePresence>
-      {scrollVisible && (
+      {shouldShow && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.8, y: 20 }}
+          ref={menuRef}
+          initial={{ opacity: 0, scale: 0.8, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.8, y: 20 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
-          className="fixed bottom-20 lg:bottom-6 right-4 z-40 flex flex-col items-end gap-2"
+          exit={{ opacity: 0, scale: 0.8, y: 12 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="fixed bottom-20 lg:bottom-6 right-3 lg:right-6 z-50 flex flex-col items-end gap-2"
         >
           <AnimatePresence>
             {open && (
               <motion.div
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                initial={{ opacity: 0, y: 12, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                transition={{ duration: 0.18 }}
-                className="bg-card border border-border/60 rounded-2xl p-2 shadow-xl flex flex-col gap-1 min-w-[180px] backdrop-blur-md"
+                exit={{ opacity: 0, y: 12, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col gap-2 mb-2"
               >
-                {urls.support && (
-                  <button
-                    onClick={() => handleClick(urls.support, 'WhatsApp Support')}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
+                {supportUrl && (
+                  <a
+                    href={supportUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] group min-w-[200px]"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                      <Headphones className="w-3.5 h-3.5" />
+                    <div className="w-9 h-9 rounded-full bg-[#25D366]/10 flex items-center justify-center shrink-0">
+                      <Headphones className="w-4 h-4 text-[#25D366]" />
                     </div>
                     <div>
-                      <p className="font-semibold text-foreground">Support Chat</p>
+                      <p className="text-sm font-semibold text-foreground">Chat Support</p>
                       <p className="text-[10px] text-muted-foreground">Talk to our team</p>
                     </div>
-                  </button>
+                  </a>
                 )}
-                {urls.channel && (
-                  <button
-                    onClick={() => handleClick(urls.channel, 'WhatsApp Channel')}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
+                {channelUrl && (
+                  <a
+                    href={channelUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] group min-w-[200px]"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                      <Users className="w-3.5 h-3.5" />
+                    <div className="w-9 h-9 rounded-full bg-[#25D366]/10 flex items-center justify-center shrink-0">
+                      <Users className="w-4 h-4 text-[#25D366]" />
                     </div>
                     <div>
-                      <p className="font-semibold text-foreground">Join Channel</p>
-                      <p className="text-[10px] text-muted-foreground">Updates & offers</p>
+                      <p className="text-sm font-semibold text-foreground">Join Channel</p>
+                      <p className="text-[10px] text-muted-foreground">Get updates & offers</p>
                     </div>
-                  </button>
+                  </a>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
 
-          <button
+          <motion.button
+            whileTap={{ scale: 0.9 }}
             onClick={() => setOpen(o => !o)}
-            className="w-11 h-11 lg:w-12 lg:h-12 rounded-full bg-[#25D366] text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+            className={`w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-[#25D366] text-white shadow-md hover:shadow-lg flex items-center justify-center transition-shadow ${!open ? 'wa-pulse' : ''}`}
+            style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
             aria-label="WhatsApp"
           >
-            {open ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}
-          </button>
+            <AnimatePresence mode="wait" initial={false}>
+              {open ? (
+                <motion.span key="close" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <X className="w-4 h-4 lg:w-5 lg:h-5" />
+                </motion.span>
+              ) : (
+                <motion.span key="wa" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <MessageCircle className="w-4 h-4 lg:w-5 lg:h-5" />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
         </motion.div>
       )}
     </AnimatePresence>
