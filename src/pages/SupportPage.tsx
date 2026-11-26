@@ -1,15 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Loader2, ArrowLeft, Send, LifeBuoy, Paperclip, X,
-  CheckCheck, Check, Clock
+  Loader2, ArrowLeft, Send, LifeBuoy, Paperclip, MoreVertical, Trash2, Check, CheckCheck, X
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 
@@ -17,11 +22,11 @@ interface Message {
   id: string;
   ticket_id: string;
   sender_id: string;
-  sender_role: 'customer' | 'admin';
+  sender_role: string;
   message: string;
   attachment_url: string | null;
-  read_at: string | null;
   created_at: string;
+  read_at: string | null;
 }
 
 function formatDateDivider(dateStr: string) {
@@ -44,21 +49,83 @@ export default function SupportPage() {
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isNearBottomRef = useRef(true);
 
-  const scrollToBottom = useCallback((smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  // Bulletproof direct scroll to bottom
+  const scrollToBottom = useCallback((smooth = false) => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    if (smooth) {
+      try {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } catch {
+        el.scrollTop = el.scrollHeight;
+      }
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, []);
 
-  // Fetch or initialize customer single thread
+  // Multi-frame paint anchor
+  const forceScrollToBottom = useCallback((smooth = false) => {
+    scrollToBottom(smooth);
+    const raf1 = requestAnimationFrame(() => {
+      scrollToBottom(smooth);
+      requestAnimationFrame(() => scrollToBottom(smooth));
+    });
+    const t1 = setTimeout(() => scrollToBottom(smooth), 60);
+    const t2 = setTimeout(() => scrollToBottom(smooth), 180);
+    const t3 = setTimeout(() => scrollToBottom(smooth), 350);
+    return () => {
+      cancelAnimationFrame(raf1);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [scrollToBottom]);
+
+  // Track if user scrolled up manually
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distanceToBottom < 120;
+  }, []);
+
+  // ResizeObserver: Snap to bottom the moment DOM message nodes mount or expand
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      if (isNearBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Trigger scroll on messages change
+  useEffect(() => {
+    if (!loading && messages.length > 0 && isNearBottomRef.current) {
+      forceScrollToBottom(false);
+    }
+  }, [loading, messages.length, forceScrollToBottom]);
+
   const initChat = useCallback(async () => {
     if (!user?.id) return;
     try {
       const { data: tickets, error } = await supabase
         .from('support_tickets')
-        .select('id, short_id, created_at, updated_at')
+        .select('id, short_id, customer_cleared_at, created_at, updated_at')
         .eq('customer_id', user.id)
         .order('updated_at', { ascending: false })
         .limit(1);
@@ -66,6 +133,8 @@ export default function SupportPage() {
       if (error) throw error;
 
       let tid: string;
+      let customerClearedAt: string | null = null;
+
       if (!tickets || tickets.length === 0) {
         const { data: newTicket, error: createErr } = await supabase
           .from('support_tickets')
@@ -83,79 +152,132 @@ export default function SupportPage() {
         tid = newTicket.id;
       } else {
         tid = tickets[0].id;
+        customerClearedAt = (tickets[0] as any).customer_cleared_at || null;
       }
 
       setTicketId(tid);
 
-      // Fetch messages for this ticket
-      const { data: msgs, error: msgErr } = await supabase
+      let query = supabase
         .from('support_messages')
         .select('*')
-        .eq('ticket_id', tid)
-        .order('created_at', { ascending: true });
+        .eq('ticket_id', tid);
+
+      // Only show messages after customer's cleared timestamp
+      if (customerClearedAt) {
+        query = query.gt('created_at', customerClearedAt);
+      }
+
+      const { data: msgs, error: msgErr } = await query.order('created_at', { ascending: true });
 
       if (!msgErr && msgs) {
         setMessages(msgs as Message[]);
-        setTimeout(() => scrollToBottom(false), 50);
+        isNearBottomRef.current = true;
       }
 
-      // Mark admin messages as read
-      await supabase.rpc('mark_support_messages_read', {
+      // Mark unread admin messages as read
+      supabase.rpc('mark_support_messages_read', {
         p_ticket_id: tid,
         p_reader_role: 'customer'
-      });
+      }).catch(() => {});
     } catch (err: any) {
       console.error('Error initializing chat:', err);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, scrollToBottom]);
-
-  const refreshMessages = useCallback(async (tid: string, smooth = true) => {
-    const { data: msgs, error } = await supabase
-      .from('support_messages')
-      .select('*')
-      .eq('ticket_id', tid)
-      .order('created_at', { ascending: true });
-
-    if (!error && msgs) {
-      setMessages(msgs as Message[]);
-      setTimeout(() => scrollToBottom(smooth), 50);
-      await supabase.rpc('mark_support_messages_read', {
-        p_ticket_id: tid,
-        p_reader_role: 'customer'
-      });
-    }
-  }, [scrollToBottom]);
+  }, [user?.id]);
 
   useEffect(() => {
     initChat();
   }, [initChat]);
 
-  // Realtime updates
-  useRealtimeRefresh(
-    ['support_messages', 'support_tickets'],
-    () => {
-      if (ticketId) refreshMessages(ticketId, true);
-    },
-    'customer-support-chat'
-  );
+  // LIVE REALTIME WEBSOCKET: Receive instant replies from admin (<100ms)
+  useEffect(() => {
+    if (!ticketId) return;
 
+    const channel = supabase
+      .channel(`customer-chat-${ticketId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'support_messages',
+          filter: `ticket_id=eq.${ticketId}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as Message;
+
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            // Match and replace optimistic temp message if identical
+            const hasTemp = prev.some(
+              (m) => m.id.startsWith('temp-') && m.message === newMsg.message
+            );
+            if (hasTemp) {
+              return prev.map((m) =>
+                m.id.startsWith('temp-') && m.message === newMsg.message ? newMsg : m
+              );
+            }
+            return [...prev, newMsg];
+          });
+
+          // If incoming from support agent, mark read immediately
+          if (newMsg.sender_role !== 'customer') {
+            supabase.rpc('mark_support_messages_read', {
+              p_ticket_id: ticketId,
+              p_reader_role: 'customer'
+            }).catch(() => {});
+          }
+
+          if (isNearBottomRef.current) {
+            forceScrollToBottom(true);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [ticketId, forceScrollToBottom]);
+
+  // OPTIMISTIC SENDING: Appears on screen in 0ms
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = replyText.trim();
     if ((!text && !attachment) || sending || !ticketId || !user?.id) return;
 
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg: Message = {
+      id: tempId,
+      ticket_id: ticketId,
+      sender_id: user.id,
+      sender_role: 'customer',
+      message: text || (attachment ? 'Sent an attachment' : ''),
+      attachment_url: null,
+      created_at: new Date().toISOString(),
+      read_at: null,
+    };
+
+    // 1. Immediately show on screen
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setReplyText('');
+    const sentAttachment = attachment;
+    setAttachment(null);
+    if (textareaRef.current) textareaRef.current.style.height = '42px';
+
+    isNearBottomRef.current = true;
+    forceScrollToBottom(true);
     setSending(true);
-    let uploadedUrl: string | null = null;
 
     try {
-      if (attachment) {
-        const ext = attachment.name.split('.').pop() || 'bin';
+      let uploadedUrl: string | null = null;
+      if (sentAttachment) {
+        const ext = sentAttachment.name.split('.').pop() || 'bin';
         const filePath = `${user.id}/${Date.now()}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from('support-attachments')
-          .upload(filePath, attachment);
+          .upload(filePath, sentAttachment);
 
         if (!uploadErr) {
           const { data: urlData } = supabase.storage
@@ -179,21 +301,49 @@ export default function SupportPage() {
 
       if (insertErr) throw insertErr;
 
-      setMessages(prev => [...prev, newMsg as Message]);
-      setReplyText('');
-      setAttachment(null);
-      if (textareaRef.current) {
-        textareaRef.current.style.height = '42px';
+      // Swap temp ID with real DB record
+      if (newMsg) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? (newMsg as Message) : m))
+        );
       }
-      setTimeout(() => scrollToBottom(true), 50);
     } catch (err: any) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       toast({
-        title: 'Failed to send',
+        title: 'Failed to send message',
         description: err.message || 'Please try again',
         variant: 'destructive',
       });
     } finally {
       setSending(false);
+    }
+  };
+
+  // Safe Customer Clear: clears for customer, preserves admin records
+  const handleDeleteConversation = async () => {
+    if (!ticketId) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.rpc('customer_clear_chat_history', {
+        p_ticket_id: ticketId,
+      });
+
+      if (error) throw error;
+
+      setMessages([]);
+      setDeleteDialogOpen(false);
+      toast({
+        title: 'Chat cleared',
+        description: 'Your conversation history has been cleared.',
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Error clearing chat',
+        description: err.message || 'Please try again',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -204,18 +354,19 @@ export default function SupportPage() {
     target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
   };
 
-  // Group messages by date
-  const groupedMessages = messages.reduce((acc, msg) => {
-    const dateKey = msg.created_at ? format(new Date(msg.created_at), 'yyyy-MM-dd') : 'unknown';
-    if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(msg);
-    return acc;
-  }, {} as Record<string, Message[]>);
+  const groupedMessages = useMemo(() => {
+    return messages.reduce((acc, msg) => {
+      const dateKey = msg.created_at ? format(new Date(msg.created_at), 'yyyy-MM-dd') : 'unknown';
+      if (!acc[dateKey]) acc[dateKey] = [];
+      acc[dateKey].push(msg);
+      return acc;
+    }, {} as Record<string, Message[]>);
+  }, [messages]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background text-foreground h-[100dvh] w-full overflow-hidden select-none">
-      {/* 1. Locked Top WhatsApp Header */}
-      <header className="h-14 md:h-16 px-3 md:px-4 bg-card/95 backdrop-blur-md border-b border-border/50 flex items-center justify-between shrink-0 shadow-sm">
+      {/* WhatsApp Header */}
+      <header className="h-14 md:h-16 px-3 md:px-4 bg-card/95 backdrop-blur-md border-b border-border/50 flex items-center justify-between shrink-0 shadow-xs">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -236,13 +387,35 @@ export default function SupportPage() {
 
           <div>
             <h1 className="font-semibold text-foreground text-sm md:text-base leading-tight">DATA360 Support</h1>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Online • Instant Help</p>
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Online {'•'} Instant Help</p>
           </div>
         </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground">
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={messages.length === 0}
+              className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Message</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
-      {/* 2. Scrollable Messages Pane */}
-      <main className="flex-1 overflow-y-auto px-3 py-4 md:px-6 space-y-4 bg-muted/20">
+      {/* Scrollable Chat Viewport */}
+      <main
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-3 py-4 md:px-6 space-y-4 bg-muted/20"
+      >
         {loading ? (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
@@ -261,9 +434,8 @@ export default function SupportPage() {
         ) : (
           Object.entries(groupedMessages).map(([dateKey, msgs]) => (
             <div key={dateKey} className="space-y-3">
-              {/* WhatsApp Date Chip */}
               <div className="flex justify-center my-2 sticky top-2 z-10">
-                <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-card/90 text-muted-foreground shadow-sm border border-border/40">
+                <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-card/90 text-muted-foreground shadow-xs border border-border/40">
                   {formatDateDivider(msgs[0]?.created_at || dateKey)}
                 </span>
               </div>
@@ -276,7 +448,7 @@ export default function SupportPage() {
                     className={`flex w-full ${isCustomer ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`relative max-w-[85%] sm:max-w-md rounded-2xl px-3.5 py-2.5 shadow-sm text-sm break-words ${
+                      className={`relative max-w-[85%] sm:max-w-md rounded-2xl px-3.5 py-2.5 shadow-xs text-sm break-words ${
                         isCustomer
                           ? 'bg-primary text-primary-foreground rounded-br-xs'
                           : 'bg-card text-foreground border border-border/50 rounded-bl-xs'
@@ -317,10 +489,9 @@ export default function SupportPage() {
             </div>
           ))
         )}
-        <div ref={messagesEndRef} />
       </main>
 
-      {/* 3. Locked Bottom Composer */}
+      {/* Auto-growing Composer */}
       <footer className="p-2 md:p-3 bg-card border-t border-border/50 shrink-0 shadow-lg pb-[max(0.6rem,env(safe-area-inset-bottom))]">
         {attachment && (
           <div className="flex items-center justify-between bg-muted/70 px-3 py-1.5 rounded-xl mb-2 text-xs max-w-4xl mx-auto border border-border/40">
@@ -333,7 +504,7 @@ export default function SupportPage() {
               onClick={() => setAttachment(null)}
               className="text-muted-foreground hover:text-foreground"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
@@ -348,16 +519,15 @@ export default function SupportPage() {
               if (e.target.files?.[0]) setAttachment(e.target.files[0]);
             }}
           />
-
           <Button
             type="button"
             variant="ghost"
             size="icon"
             onClick={() => fileInputRef.current?.click()}
-            className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
-            title="Attach file"
+            className="h-10 w-10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+            title="Attach File"
           >
-            <Paperclip className="w-5 h-5" />
+            <Paperclip className="w-4 h-4" />
           </Button>
 
           <Textarea
@@ -372,22 +542,41 @@ export default function SupportPage() {
               }
             }}
             placeholder="Type a message..."
-            className="min-h-[42px] max-h-[120px] resize-none rounded-2xl bg-muted/40 border-border/50 text-sm py-2.5 px-4 focus-visible:ring-1 leading-relaxed"
+            maxLength={2000}
+            className="min-h-[42px] max-h-[120px] resize-none text-sm rounded-2xl bg-muted/50 border-border/50 focus-visible:ring-1 focus-visible:ring-primary py-2 px-3.5 leading-relaxed"
           />
 
           <Button
             type="submit"
             disabled={(!replyText.trim() && !attachment) || sending}
-            className="h-10 w-10 shrink-0 rounded-full p-0 flex items-center justify-center bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-transform active:scale-95"
+            className="h-10 w-10 rounded-full p-0 flex items-center justify-center bg-primary text-primary-foreground shadow-xs shrink-0"
           >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4 ml-0.5" />
-            )}
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
           </Button>
         </form>
       </footer>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will clear the conversation messages from your view. Support records will be preserved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConversation}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Deleting...' : 'Delete Message'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
