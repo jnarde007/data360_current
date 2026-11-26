@@ -477,7 +477,7 @@ export default function AdminSupportPage() {
                       {activeThread.customerName}
                     </h3>
                     <p className="text-[11px] text-muted-foreground truncate">
-                      {activeThread.customerEmail} {activeThread.customerPhone && • activeThread.customerPhone}
+                      {activeThread.customerEmail} {activeThread.customerPhone && (' • ' + activeThread.customerPhone)}
                     </p>
                   </div>
                 </div>
