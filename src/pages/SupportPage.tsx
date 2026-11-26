@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Loader2, ArrowLeft, Send, LifeBuoy, Paperclip, MoreVertical, Trash2, Check, CheckCheck, X
+  Loader2, ArrowLeft, Send, LifeBuoy, Paperclip, MoreVertical, Trash2, Check, CheckCheck, X, Package
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 
@@ -27,6 +27,15 @@ interface Message {
   attachment_url: string | null;
   created_at: string;
   read_at: string | null;
+}
+
+interface OrderContext {
+  orderId: string;
+  shortId: string;
+  network?: string;
+  volume?: string;
+  phone?: string;
+  status?: string;
 }
 
 function formatDateDivider(dateStr: string) {
@@ -50,6 +59,9 @@ export default function SupportPage() {
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
 
+  // Referenced order banner state
+  const [orderContext, setOrderContext] = useState<OrderContext | null>(null);
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -58,7 +70,25 @@ export default function SupportPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
 
-  // Bulletproof direct scroll to bottom
+  // Read order context from search parameters
+  useEffect(() => {
+    const orderShortId = searchParams.get('orderShortId') || searchParams.get('order');
+    if (orderShortId) {
+      setOrderContext({
+        orderId: searchParams.get('orderId') || '',
+        shortId: orderShortId,
+        network: searchParams.get('network') || '',
+        volume: searchParams.get('volume') || '',
+        phone: searchParams.get('phone') || '',
+        status: searchParams.get('status') || '',
+      });
+      setSearchParams({}, { replace: true });
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 150);
+    }
+  }, [searchParams, setSearchParams]);
+
   const scrollToBottom = useCallback((smooth = false) => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -73,7 +103,6 @@ export default function SupportPage() {
     }
   }, []);
 
-  // Multi-frame paint anchor
   const forceScrollToBottom = useCallback((smooth = false) => {
     scrollToBottom(smooth);
     const raf1 = requestAnimationFrame(() => {
@@ -91,7 +120,6 @@ export default function SupportPage() {
     };
   }, [scrollToBottom]);
 
-  // Track if user scrolled up manually
   const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -99,22 +127,18 @@ export default function SupportPage() {
     isNearBottomRef.current = distanceToBottom < 120;
   }, []);
 
-  // ResizeObserver: Snap to bottom the moment DOM message nodes mount or expand
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
-
     const observer = new ResizeObserver(() => {
       if (isNearBottomRef.current) {
         el.scrollTop = el.scrollHeight;
       }
     });
-
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
-  // Trigger scroll on messages change
   useEffect(() => {
     if (!loading && messages.length > 0 && isNearBottomRef.current) {
       forceScrollToBottom(false);
@@ -122,12 +146,14 @@ export default function SupportPage() {
   }, [loading, messages.length, forceScrollToBottom]);
 
   const initChat = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user) return;
     try {
+      const customerId = user.customer_id || user.id;
+
       const { data: tickets, error } = await supabase
         .from('support_tickets')
         .select('id, short_id, customer_cleared_at, created_at, updated_at')
-        .eq('customer_id', user.id)
+        .eq('customer_id', customerId)
         .order('updated_at', { ascending: false })
         .limit(1);
 
@@ -140,7 +166,7 @@ export default function SupportPage() {
         const { data: newTicket, error: createErr } = await supabase
           .from('support_tickets')
           .insert({
-            customer_id: user.id,
+            customer_id: customerId,
             subject: 'Customer Support',
             category: 'Other',
             message: 'Support conversation started',
@@ -163,7 +189,6 @@ export default function SupportPage() {
         .select('*')
         .eq('ticket_id', tid);
 
-      // Only show messages after customer's cleared timestamp
       if (customerClearedAt) {
         query = query.gt('created_at', customerClearedAt);
       }
@@ -175,39 +200,33 @@ export default function SupportPage() {
         isNearBottomRef.current = true;
       }
 
-      // Mark unread admin messages as read
+      // Mark read in messages AND notification center
       supabase.rpc('mark_support_messages_read', {
         p_ticket_id: tid,
         p_reader_role: 'customer'
       }).catch(() => {});
+
+      supabase
+        .from('notifications')
+        .update({ read: true } as any)
+        .eq('target_type', 'customer')
+        .eq('type', 'support')
+        .eq('read', false)
+        .then(() => {})
+        .catch(() => {});
+
     } catch (err: any) {
       console.error('Error initializing chat:', err);
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     initChat();
   }, [initChat]);
 
-  // Pre-fill message if routed from Order or Transaction report
-  useEffect(() => {
-    const reportMsg = searchParams.get('reportMsg');
-    if (reportMsg) {
-      setReplyText(reportMsg);
-      setSearchParams({}, { replace: true });
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.style.height = 'auto';
-          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
-        }
-      }, 150);
-    }
-  }, [searchParams, setSearchParams]);
-
-  // LIVE REALTIME WEBSOCKET: Receive instant replies from admin (<100ms)
+  // Realtime subscription
   useEffect(() => {
     if (!ticketId) return;
 
@@ -226,7 +245,6 @@ export default function SupportPage() {
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Match and replace optimistic temp message if identical
             const hasTemp = prev.some(
               (m) => m.id.startsWith('temp-') && m.message === newMsg.message
             );
@@ -238,12 +256,19 @@ export default function SupportPage() {
             return [...prev, newMsg];
           });
 
-          // If incoming from support agent, mark read immediately
           if (newMsg.sender_role !== 'customer') {
             supabase.rpc('mark_support_messages_read', {
               p_ticket_id: ticketId,
               p_reader_role: 'customer'
             }).catch(() => {});
+
+            supabase
+              .from('notifications')
+              .update({ read: true } as any)
+              .eq('target_type', 'customer')
+              .eq('type', 'support')
+              .then(() => {})
+              .catch(() => {});
           }
 
           if (isNearBottomRef.current) {
@@ -258,35 +283,45 @@ export default function SupportPage() {
     };
   }, [ticketId, forceScrollToBottom]);
 
-  // OPTIMISTIC SENDING: Appears on screen in 0ms
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = replyText.trim();
     if ((!text && !attachment) || sending) return;
+
     if (!ticketId || !user?.id) {
       toast({
         title: 'Connecting to chat...',
-        description: 'Please wait a moment while your chat connects, then try sending again.',
+        description: 'Please wait a moment while your chat connects.',
       });
       initChat();
       return;
+    }
+
+    // Attach order reference header if reporting an order
+    let finalPayloadMessage = text;
+    if (orderContext) {
+      const orderMeta = [
+        `[ORDER_REF:${orderContext.shortId}|${orderContext.network || ''}|${orderContext.volume || ''}|${orderContext.phone || ''}|${orderContext.status || ''}]`,
+        text
+      ].filter(Boolean).join('\n');
+      finalPayloadMessage = orderMeta;
     }
 
     const tempId = 'temp-' + Date.now();
     const optimisticMsg: Message = {
       id: tempId,
       ticket_id: ticketId,
-      sender_id: user.id,
+      sender_id: user.customer_id || user.id,
       sender_role: 'customer',
-      message: text || (attachment ? 'Sent an attachment' : ''),
+      message: finalPayloadMessage || (attachment ? 'Sent an attachment' : ''),
       attachment_url: null,
       created_at: new Date().toISOString(),
       read_at: null,
     };
 
-    // 1. Immediately show on screen
     setMessages((prev) => [...prev, optimisticMsg]);
     setReplyText('');
+    setOrderContext(null); // Clear context once sent
     const sentAttachment = attachment;
     setAttachment(null);
     if (textareaRef.current) textareaRef.current.style.height = '42px';
@@ -316,9 +351,9 @@ export default function SupportPage() {
         .from('support_messages')
         .insert({
           ticket_id: ticketId,
-          sender_id: user.id,
+          sender_id: user.customer_id || user.id,
           sender_role: 'customer',
-          message: text || (uploadedUrl ? 'Sent an attachment' : ''),
+          message: finalPayloadMessage || (uploadedUrl ? 'Sent an attachment' : ''),
           attachment_url: uploadedUrl,
         } as any)
         .select()
@@ -326,7 +361,6 @@ export default function SupportPage() {
 
       if (insertErr) throw insertErr;
 
-      // Swap temp ID with real DB record
       if (newMsg) {
         setMessages((prev) =>
           prev.map((m) => (m.id === tempId ? (newMsg as Message) : m))
@@ -344,7 +378,6 @@ export default function SupportPage() {
     }
   };
 
-  // Safe Customer Clear: clears for customer, preserves admin records
   const handleDeleteConversation = async () => {
     if (!ticketId) return;
     setDeleting(true);
@@ -390,7 +423,7 @@ export default function SupportPage() {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background text-foreground h-[100dvh] w-full overflow-hidden select-none">
-      {/* WhatsApp Header */}
+      {/* Header */}
       <header className="h-14 md:h-16 px-3 md:px-4 bg-card/95 backdrop-blur-md border-b border-border/50 flex items-center justify-between shrink-0 shadow-xs">
         <div className="flex items-center gap-3">
           <Button
@@ -435,7 +468,7 @@ export default function SupportPage() {
         </DropdownMenu>
       </header>
 
-      {/* Scrollable Chat Viewport */}
+      {/* Messages */}
       <main
         ref={messagesContainerRef}
         onScroll={handleScroll}
@@ -467,6 +500,12 @@ export default function SupportPage() {
 
               {msgs.map((m) => {
                 const isCustomer = m.sender_role === 'customer';
+
+                // Parse out Order Reference tag if present
+                const orderRefMatch = m.message.match(/^\[ORDER_REF:([^|\]]+)(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?\]\n?([\s\S]*)$/);
+                const orderShortId = orderRefMatch ? orderRefMatch[1] : null;
+                const cleanText = orderRefMatch ? orderRefMatch[6] : m.message;
+
                 return (
                   <div
                     key={m.id}
@@ -485,13 +524,23 @@ export default function SupportPage() {
                         </p>
                       )}
 
+                      {/* Customer-side Order Tag */}
+                      {orderShortId && (
+                        <div className="mb-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/15 text-[11px] font-medium">
+                          <Package className="w-3.5 h-3.5" />
+                          <span>Regarding Order: <strong>{orderShortId}</strong></span>
+                        </div>
+                      )}
+
                       {m.attachment_url && (
                         <div className="mb-2 rounded-lg overflow-hidden">
                           <AttachmentRenderer url={m.attachment_url} />
                         </div>
                       )}
 
-                      <p className="whitespace-pre-wrap leading-relaxed select-text">{m.message}</p>
+                      {cleanText && (
+                        <p className="whitespace-pre-wrap leading-relaxed select-text">{cleanText}</p>
+                      )}
 
                       <div
                         className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
@@ -516,8 +565,26 @@ export default function SupportPage() {
         )}
       </main>
 
-      {/* Auto-growing Composer */}
+      {/* Composer */}
       <footer className="p-2 md:p-3 bg-card border-t border-border/50 shrink-0 shadow-lg pb-[max(0.6rem,env(safe-area-inset-bottom))]">
+        {/* Order Reference Pill (appears when customer taps Report) */}
+        {orderContext && (
+          <div className="flex items-center justify-between bg-primary/10 border border-primary/20 px-3 py-2 rounded-xl mb-2 text-xs max-w-4xl mx-auto text-primary">
+            <span className="flex items-center gap-2 truncate font-medium">
+              <Package className="w-4 h-4 shrink-0" />
+              <span>Replying about Order <strong>{orderContext.shortId}</strong> {orderContext.network && `(${orderContext.network} ${orderContext.volume || ''})`}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setOrderContext(null)}
+              className="text-primary/70 hover:text-primary p-0.5 rounded-md hover:bg-primary/10"
+              title="Remove order reference"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {attachment && (
           <div className="flex items-center justify-between bg-muted/70 px-3 py-1.5 rounded-xl mb-2 text-xs max-w-4xl mx-auto border border-border/40">
             <span className="truncate text-foreground font-medium flex items-center gap-1.5">
@@ -566,7 +633,7 @@ export default function SupportPage() {
                 handleSendMessage();
               }
             }}
-            placeholder="Type a message..."
+            placeholder={orderContext ? `Describe your issue with order ${orderContext.shortId}...` : "Type a message..."}
             maxLength={2000}
             className="min-h-[42px] max-h-[120px] resize-none text-sm rounded-2xl bg-muted/50 border-border/50 focus-visible:ring-1 focus-visible:ring-primary py-2 px-3.5 leading-relaxed"
           />

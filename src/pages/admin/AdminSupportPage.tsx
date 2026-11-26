@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Loader2, ArrowLeft, Send, LifeBuoy, Search, MoreVertical, Trash2, Paperclip, Check, CheckCheck, X, User
+  Loader2, ArrowLeft, Send, LifeBuoy, Search, MoreVertical, Trash2, Paperclip, Package, Check, CheckCheck, X, User
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
@@ -266,6 +266,17 @@ export default function AdminSupportPage() {
       supabase.rpc('mark_support_messages_read', {
         p_ticket_id: ticketId,
         p_reader_role: 'admin',
+      });
+      // Mark notifications as read for this ticket
+      supabase
+        .from('notifications')
+        .update({ read: true } as any)
+        .eq('target_type', 'admin')
+        .eq('type', 'support')
+        .eq('read', false)
+        .then(() => {})
+        .catch(() => {});
+      // dummy: ({
       }).then(() => {
         setThreads((prev) =>
           prev.map((t) => (t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t))
@@ -802,9 +813,40 @@ export default function AdminSupportPage() {
                                 </div>
                               )}
 
-                              <p className="whitespace-pre-wrap leading-relaxed select-text">
-                                {m.message}
-                              </p>
+                              {(() => {
+                                const orderRefMatch = m.message.match(/^\[ORDER_REF:([^|\]]+)(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?\]\n?([\s\S]*)$/);
+                                if (!orderRefMatch) {
+                                  return (
+                                    <p className="whitespace-pre-wrap leading-relaxed select-text">
+                                      {m.message}
+                                    </p>
+                                  );
+                                }
+                                const [_, orderNo, net, vol, ph, st, userMsg] = orderRefMatch;
+                                return (
+                                  <div className="space-y-2">
+                                    <div className="rounded-xl bg-card border border-border/80 p-2.5 text-xs shadow-xs text-foreground space-y-1">
+                                      <div className="flex items-center justify-between font-semibold border-b border-border/40 pb-1">
+                                        <span className="flex items-center gap-1.5 text-primary">
+                                          <Package className="w-3.5 h-3.5" />
+                                          Order Reference: {orderNo}
+                                        </span>
+                                        {st && <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-muted font-bold text-muted-foreground">{st}</span>}
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground pt-0.5">
+                                        {net && <div>Network: <span className="font-medium text-foreground">{net}</span></div>}
+                                        {vol && <div>Bundle: <span className="font-medium text-foreground">{vol}</span></div>}
+                                        {ph && <div className="col-span-2">Phone: <span className="font-medium text-foreground">{ph}</span></div>}
+                                      </div>
+                                    </div>
+                                    {userMsg && (
+                                      <p className="whitespace-pre-wrap leading-relaxed select-text text-sm">
+                                        {userMsg}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
 
                               <div
                                 className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
