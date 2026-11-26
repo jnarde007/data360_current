@@ -60,6 +60,15 @@ export default function OrdersPage() {
   const [detailOrder, setDetailOrder] = useState<OrderRow | null>(null);
   const [refundEvidence, setRefundEvidence] = useState<Record<string, RefundEvidence>>({});
   const [reportIssueOrder, setReportIssueOrder] = useState<OrderRow | null>(null);
+  const handleReportOrder = (o: OrderRow) => {
+    const shortId = o.short_id || o.id.slice(0, 8);
+    const network = o.network || '';
+    const volume = o.volume_gb ? `${o.volume_gb}GB` : '';
+    const phone = o.recipient_phone || o.phone || '';
+    const status = o.status;
+    const msg = `Issue with order ${shortId} (${network} ${volume} to ${phone}). Status: ${status}`;
+    navigate(`/support?reportMsg=${encodeURIComponent(msg)}&orderId=${o.id}`);
+  };
   const deepLinkedRef = useRef(false);
 
   const loadOrders = useCallback(async () => {
@@ -265,7 +274,7 @@ export default function OrdersPage() {
                         <div className="text-right shrink-0 space-y-1 flex flex-col items-end">
                           <p className="text-sm font-display font-bold text-foreground tabular-nums">{formatGHS(Number(o.total_amount))}</p>
                           <StatusBadge status={statusViewFor(o).badgeStatus} />
-                          <button type="button" aria-label="Report an issue" className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={e => { e.stopPropagation(); setReportIssueOrder(o); }}>
+                          <button type="button" aria-label="Report an issue" className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={e => { e.stopPropagation(); handleReportOrder(o); }}>
                             <LifeBuoy className="w-3 h-3" /> Report
                           </button>
                         </div>
@@ -328,7 +337,7 @@ export default function OrdersPage() {
                                 {o.status === 'pending_confirmation' && o.grace_period_ends_at ? (
                                   <OrderCountdown orderId={o.id} customerId={user!.id} gracePeriodEndsAt={o.grace_period_ends_at} shortId={o.short_id} onCancelled={handleCancelled} allowProceedNow onProceeded={handleCancelled} />
                                 ) : (
-                                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={() => setReportIssueOrder(o)}>
+                                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={() => handleReportOrder(o)}>
                                     <LifeBuoy className="w-3.5 h-3.5" />
                                     Report
                                   </Button>
@@ -394,7 +403,7 @@ export default function OrdersPage() {
             const o = detailOrder;
             if (o) {
               setDetailOrder(null);
-              setReportIssueOrder(o);
+              handleReportOrder(o);
             }
           }}
         />

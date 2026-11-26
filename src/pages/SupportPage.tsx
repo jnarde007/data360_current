@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,7 @@ export default function SupportPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [ticketId, setTicketId] = useState<string | null>(null);
@@ -190,6 +191,22 @@ export default function SupportPage() {
     initChat();
   }, [initChat]);
 
+  // Pre-fill message if routed from Order or Transaction report
+  useEffect(() => {
+    const reportMsg = searchParams.get('reportMsg');
+    if (reportMsg) {
+      setReplyText(reportMsg);
+      setSearchParams({}, { replace: true });
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+        }
+      }, 150);
+    }
+  }, [searchParams, setSearchParams]);
+
   // LIVE REALTIME WEBSOCKET: Receive instant replies from admin (<100ms)
   useEffect(() => {
     if (!ticketId) return;
@@ -245,7 +262,15 @@ export default function SupportPage() {
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = replyText.trim();
-    if ((!text && !attachment) || sending || !ticketId || !user?.id) return;
+    if ((!text && !attachment) || sending) return;
+    if (!ticketId || !user?.id) {
+      toast({
+        title: 'Connecting to chat...',
+        description: 'Please wait a moment while your chat connects, then try sending again.',
+      });
+      initChat();
+      return;
+    }
 
     const tempId = 'temp-' + Date.now();
     const optimisticMsg: Message = {

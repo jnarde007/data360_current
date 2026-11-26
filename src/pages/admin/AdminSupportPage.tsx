@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -724,7 +724,19 @@ export default function AdminSupportPage() {
                       <MoreVertical className="w-4 h-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (activeThread?.customerId) {
+                          window.open(`/admin/customers/${activeThread.customerId}`, '_blank');
+                        }
+                      }}
+                      className="flex items-center gap-2 cursor-pointer font-medium"
+                    >
+                      <User className="w-4 h-4 text-primary" />
+                      <span>View Customer Profile</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => setDeleteDialogOpen(true)}
                       className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
