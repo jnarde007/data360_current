@@ -90,6 +90,7 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  const isSupportChatActive = location.pathname === "/support" && new URLSearchParams(location.search).has("chat");
   const navigate = useNavigate();
 
   const handleRefresh = useCallback(async () => {
@@ -281,7 +282,7 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
           {/* Mobile bottom navigation */}
           <nav
             aria-label="Quick navigation"
-            className="lg:hidden fixed bottom-0 inset-x-0 z-40 premium-topbar border-t border-border/40 px-2 pt-1.5"
+            className={"lg:hidden fixed bottom-0 inset-x-0 z-40 premium-topbar border-t border-border/40 px-2 pt-1.5 " + (isSupportChatActive ? "hidden" : "")}
             style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))', boxShadow: 'var(--shadow-sm)' }}
           >
             <div className="grid grid-cols-5 max-w-md mx-auto">

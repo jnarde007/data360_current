@@ -1,548 +1,684 @@
-﻿import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import { supabase } from '@/integrations/supabase/client';
+import { useRealtimeRefresh } from '@/hooks/use-realtime-refresh';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
-import { useToast } from '@/hooks/use-toast';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
 import {
-  Loader2, Send, Paperclip, Headphones, RefreshCw, Trash2, ArrowLeft, Search, CheckCheck
+  Loader2, ArrowLeft, Send, LifeBuoy, Search, Paperclip, X,
+  MoreVertical, Trash2, CheckCheck, Check, MessageSquare
 } from 'lucide-react';
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
+import { useSearchParams } from 'react-router-dom';
 
 interface CustomerThread {
-  ticket_id: string;
-  customer_id: string;
-  customer_name: string;
-  customer_email: string;
-  customer_phone: string;
-  last_message: string;
-  last_time: string;
-  unread_count: number;
+  ticketId: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
 }
 
 interface Message {
   id: string;
   ticket_id: string;
   sender_id: string;
-  sender_role: string;
+  sender_role: 'customer' | 'admin';
   message: string;
   attachment_url: string | null;
+  read_at: string | null;
   created_at: string;
 }
 
+function formatDateDivider(dateStr: string) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  if (isToday(d)) return 'Today';
+  if (isYesterday(d)) return 'Yesterday';
+  return format(d, 'EEEE, MMM d, yyyy');
+}
+
 export default function AdminSupportPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
-  const [threads, setThreads] = useState<CustomerThread[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [loading, setLoading] = useState(true);
+  const [threads, setThreads] = useState<CustomerThread[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
-  const [activeCustomer, setActiveCustomer] = useState<CustomerThread | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
+
   const [messages, setMessages] = useState<Message[]>([]);
-  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [clearingChat, setClearingChat] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const scrollToBottom = useCallback((instant = false) => {
-    const container = chatContainerRef.current;
-    if (container) {
-      if (instant) {
-        container.scrollTop = container.scrollHeight;
-      } else {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-      }
-    }
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'end' });
-    }
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
   }, []);
 
-  const openChat = async (thread: CustomerThread) => {
-    setActiveTicketId(thread.ticket_id);
-    setActiveCustomer(thread);
-    setMessagesLoading(true);
-
+  // Fetch threads aggregated per customer
+  const fetchThreads = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('support_messages')
-        .select('*')
-        .eq('ticket_id', thread.ticket_id)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setMessages((data || []) as Message[]);
-
-      try {
-        await supabase.rpc('mark_support_messages_read', { p_ticket_id: thread.ticket_id, p_reader_role: 'admin' });
-      } catch (_) {}
-
-      setThreads(prev => prev.map(t => t.ticket_id === thread.ticket_id ? { ...t, unread_count: 0 } : t));
-
-      requestAnimationFrame(() => {
-        scrollToBottom(true);
-        setTimeout(() => scrollToBottom(true), 60);
-        setTimeout(() => scrollToBottom(true), 250);
-      });
-    } catch {
-      // silent
-    } finally {
-      setMessagesLoading(false);
-    }
-  };
-
-  const loadThreads = useCallback(async () => {
-    try {
-      const { data: tickets, error: tErr } = await supabase
+      const { data: tickets, error } = await supabase
         .from('support_tickets')
-        .select('id, customer_id, updated_at, subject, status')
+        .select('id, customer_id, updated_at')
         .order('updated_at', { ascending: false });
 
-      if (tErr) throw tErr;
+      if (error) throw error;
       if (!tickets || tickets.length === 0) {
         setThreads([]);
         setLoading(false);
         return;
       }
 
-      const customerMap = new Map<string, any>();
+      // Group tickets by customer (one continuous thread per customer)
+      const customerMap = new Map<string, string>(); // customerId -> primaryTicketId
       tickets.forEach(t => {
         if (!customerMap.has(t.customer_id)) {
-          customerMap.set(t.customer_id, t);
+          customerMap.set(t.customer_id, t.id);
         }
       });
-      const uniqueTickets = Array.from(customerMap.values());
-      const customerIds = uniqueTickets.map(t => t.customer_id);
 
+      const customerIds = Array.from(customerMap.keys());
+
+      // Fetch customer details
       const { data: profiles } = await supabase
-        .from('profiles')
+        .from('customers')
         .select('id, full_name, email, phone')
         .in('id', customerIds);
 
-      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+      const profileLookup = new Map((profiles || []).map(p => [p.id, p]));
 
-      const threadList: CustomerThread[] = await Promise.all(
-        uniqueTickets.map(async (t) => {
-          const prof = profileMap.get(t.customer_id);
-          const { data: latestMsg } = await supabase
+      const threadResults: CustomerThread[] = await Promise.all(
+        customerIds.map(async (cid) => {
+          const tid = customerMap.get(cid)!;
+          const profile = profileLookup.get(cid);
+
+          // Get last 15 messages for preview & unread count
+          const { data: msgs } = await supabase
             .from('support_messages')
-            .select('message, created_at')
-            .eq('ticket_id', t.id)
+            .select('message, created_at, sender_role, read_at')
+            .eq('ticket_id', tid)
             .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .limit(15);
 
-          const { count: unread } = await supabase
-            .from('support_messages')
-            .select('id', { count: 'exact', head: true })
-            .eq('ticket_id', t.id)
-            .eq('sender_role', 'customer')
-            .is('read_at', null);
+          const lastMsg = msgs && msgs[0];
+          const unread = (msgs || []).filter(
+            m => m.sender_role === 'customer' && !m.read_at
+          ).length;
 
           return {
-            ticket_id: t.id,
-            customer_id: t.customer_id,
-            customer_name: prof?.full_name || 'Customer',
-            customer_email: prof?.email || '',
-            customer_phone: prof?.phone || '',
-            last_message: latestMsg?.message || 'Started a conversation',
-            last_time: latestMsg?.created_at || t.updated_at,
-            unread_count: unread || 0,
+            ticketId: tid,
+            customerId: cid,
+            customerName: profile?.full_name || 'Customer',
+            customerEmail: profile?.email || 'No email',
+            customerPhone: profile?.phone || '',
+            lastMessage: lastMsg?.message || 'Started a conversation',
+            lastMessageTime: lastMsg?.created_at || new Date().toISOString(),
+            unreadCount: unread,
           };
         })
       );
 
-      threadList.sort((a, b) => new Date(b.last_time).getTime() - new Date(a.last_time).getTime());
-      setThreads(threadList);
+      setThreads(threadResults);
 
-      if (!activeTicketId && threadList.length > 0 && window.innerWidth >= 1024) {
-        openChat(threadList[0]);
+      const targetTicket = searchParams.get('chat') || threadResults[0]?.ticketId;
+      if (targetTicket) {
+        setActiveTicketId(targetTicket);
+        if (!searchParams.has('chat')) {
+          setSearchParams({ chat: targetTicket }, { replace: true });
+        }
       }
-    } catch {
-      // silent
+    } catch (err: any) {
+      console.error('Error fetching admin threads:', err);
     } finally {
       setLoading(false);
     }
-  }, [activeTicketId]);
+  }, [searchParams, setSearchParams]);
 
-  useEffect(() => {
-    loadThreads();
-  }, [loadThreads]);
-
-  // Realtime subscription
-  useEffect(() => {
-    if (!activeTicketId) return;
-    const channel = supabase
-      .channel(`admin-chat-${activeTicketId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'support_messages',
-        filter: `ticket_id=eq.${activeTicketId}`,
-      }, (payload) => {
-        const msg = payload.new as Message;
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-        setTimeout(() => scrollToBottom(false), 50);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [activeTicketId, scrollToBottom]);
-
-  const sendReply = async () => {
-    if ((!replyText.trim() && !attachment) || !activeTicketId) return;
-    setSending(true);
-
+  // Fetch messages for active ticket & mark customer messages read
+  const fetchMessages = useCallback(async (ticketId: string, smoothScroll = false) => {
+    setLoadingMessages(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('support_messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setMessages((data as Message[]) || []);
+
+      // Mark unread messages as read in database
+      await supabase.rpc('mark_support_messages_read', {
+        p_ticket_id: ticketId,
+        p_reader_role: 'admin'
+      });
+
+      // Clear local unread badge
+      setThreads(prev => prev.map(t => t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t));
+
+      setTimeout(() => scrollToBottom(smoothScroll), 60);
+    } catch (err: any) {
+      console.error('Error fetching messages:', err);
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    fetchThreads();
+  }, [fetchThreads]);
+
+  useEffect(() => {
+    if (activeTicketId) {
+      fetchMessages(activeTicketId, false);
+    }
+  }, [activeTicketId, fetchMessages]);
+
+  useRealtimeRefresh(() => {
+    if (activeTicketId) {
+      fetchMessages(activeTicketId, true);
+    }
+  }, 'support_messages');
+
+  const handleSelectThread = (ticketId: string) => {
+    setActiveTicketId(ticketId);
+    setSearchParams({ chat: ticketId });
+  };
+
+  const handleBackToList = () => {
+    setActiveTicketId(null);
+    setSearchParams({});
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setReplyText(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+    }
+  };
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if ((!replyText.trim() && !attachment) || !activeTicketId || !user?.id || sending) return;
+
+    setSending(true);
+    try {
       let attachmentUrl: string | null = null;
 
       if (attachment) {
-        const ext = attachment.name.split('.').pop()?.toLowerCase() || 'bin';
-        const path = `admin/${activeTicketId}/${crypto.randomUUID()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage.from('support-attachments').upload(path, attachment);
-        if (uploadErr) throw uploadErr;
-        const { data: urlData } = supabase.storage.from('support-attachments').getPublicUrl(path);
-        attachmentUrl = urlData.publicUrl;
+        const ext = attachment.name.split('.').pop();
+        const filePath = `admin/${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('support-attachments')
+          .upload(filePath, attachment);
+
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage
+            .from('support-attachments')
+            .getPublicUrl(filePath);
+          attachmentUrl = urlData?.publicUrl || null;
+        }
       }
 
       const { data: newMsg, error } = await supabase
         .from('support_messages')
         .insert({
           ticket_id: activeTicketId,
-          sender_id: user?.id || 'admin',
+          sender_id: user.id,
           sender_role: 'admin',
-          message: replyText.trim() || (attachmentUrl ? '[Attachment]' : ''),
+          message: replyText.trim() || (attachment ? '[Attachment]' : ''),
           attachment_url: attachmentUrl,
         } as any)
         .select()
         .single();
 
       if (error) throw error;
-      if (newMsg) {
-        setMessages(prev => [...prev, newMsg as Message]);
-      }
+
+      setMessages(prev => [...prev, newMsg as Message]);
       setReplyText('');
       setAttachment(null);
-      setTimeout(() => scrollToBottom(false), 40);
-    } catch {
-      toast({ title: 'Failed to send', description: 'Could not send reply.', variant: 'destructive' });
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+
+      // Update local thread preview
+      setThreads(prev => prev.map(t => t.ticketId === activeTicketId ? {
+        ...t,
+        lastMessage: replyText.trim() || '[Attachment]',
+        lastMessageTime: new Date().toISOString()
+      } : t));
+
+      setTimeout(() => scrollToBottom(true), 60);
+    } catch (err: any) {
+      toast({
+        title: 'Failed to send reply',
+        description: err.message,
+        variant: 'destructive',
+      });
     } finally {
       setSending(false);
     }
   };
 
-  // CLEAR ENTIRE CHAT
-  const handleClearWholeChat = async () => {
+  const handleClearHistory = async () => {
     if (!activeTicketId) return;
-    setClearingChat(true);
-
+    setClearing(true);
     try {
-      const { error } = await supabase
-        .from('support_messages')
-        .delete()
-        .eq('ticket_id', activeTicketId);
+      const { error } = await supabase.rpc('admin_clear_chat_history', {
+        p_ticket_id: activeTicketId
+      });
 
       if (error) throw error;
 
       setMessages([]);
-      setThreads(prev => prev.map(t => t.ticket_id === activeTicketId ? { ...t, last_message: 'Chat history cleared', unread_count: 0 } : t));
-      toast({ title: 'Chat cleared', description: 'All messages for this customer have been permanently deleted.' });
-      setDeleteConfirmOpen(false);
-    } catch {
-      toast({ title: 'Error', description: 'Could not clear chat history.', variant: 'destructive' });
+      setThreads(prev => prev.map(t => t.ticketId === activeTicketId ? {
+        ...t,
+        lastMessage: 'Chat history cleared',
+        unreadCount: 0
+      } : t));
+
+      toast({ title: 'Chat history cleared' });
+      setClearDialogOpen(false);
+    } catch (err: any) {
+      toast({
+        title: 'Failed to clear chat',
+        description: err.message,
+        variant: 'destructive',
+      });
     } finally {
-      setClearingChat(false);
+      setClearing(false);
     }
   };
 
-  const visibleThreads = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const filteredThreads = useMemo(() => {
     return threads.filter(t => {
-      if (filter === 'unread' && t.unread_count === 0) return false;
-      if (q && !t.customer_name.toLowerCase().includes(q) && !t.customer_phone.includes(q) && !t.customer_email.toLowerCase().includes(q)) return false;
+      const matchesSearch =
+        t.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.customerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.customerPhone && t.customerPhone.includes(searchQuery));
+      if (!matchesSearch) return false;
+      if (filterMode === 'unread') return t.unreadCount > 0;
       return true;
     });
-  }, [threads, filter, search]);
+  }, [threads, searchQuery, filterMode]);
 
-  const formatDividerDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    if (isToday(d)) return 'Today';
-    if (isYesterday(d)) return 'Yesterday';
-    const now = new Date();
-    const diffDays = Math.abs(now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays < 7) {
-      return format(d, 'EEEE');
-    }
-    return format(d, 'MMM d, yyyy');
-  };
+  const groupedMessages = useMemo(() => {
+    const groups: { date: string; items: Message[] }[] = [];
+    messages.forEach((msg) => {
+      const dateStr = msg.created_at;
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && isSameDay(new Date(lastGroup.items[0].created_at), new Date(dateStr))) {
+        lastGroup.items.push(msg);
+      } else {
+        groups.push({ date: dateStr, items: [msg] });
+      }
+    });
+    return groups;
+  }, [messages]);
+
+  const activeThread = threads.find(t => t.ticketId === activeTicketId);
 
   return (
     <AdminLayout>
-      <div className="space-y-4">
-        {/* Title */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold font-display text-foreground">Customer Chats</h1>
-            <p className="text-xs text-muted-foreground">Live conversations with registered customers</p>
-          </div>
-          <Button variant="outline" size="sm" onClick={loadThreads} className="gap-1.5 h-8 text-xs">
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
-          </Button>
-        </div>
-
-        {/* Workspace */}
-        <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] lg:grid-cols-[340px_1fr] gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
-          
-          {/* Threads List */}
-          <div className={`${activeTicketId ? 'hidden md:flex' : 'flex'} flex-col bg-card border border-border/60 rounded-2xl overflow-hidden shadow-2xs`}>
-            <div className="p-3 border-b border-border/50 space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  placeholder="Search customer name, phone..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="pl-8 h-8 text-xs rounded-lg"
-                />
-              </div>
-              <div className="flex gap-1">
+      <div className="w-full h-[calc(100dvh-64px)] lg:h-[calc(100dvh-96px)] flex bg-background rounded-2xl border border-border/40 overflow-hidden shadow-sm">
+        
+        {/* Left Sidebar: Customer List */}
+        <aside
+          className={`${
+            activeTicketId ? 'hidden md:flex' : 'flex'
+          } w-full md:w-80 lg:w-96 flex-col border-r border-border/40 bg-card/60 shrink-0`}
+        >
+          {/* Header & Search */}
+          <div className="p-3.5 border-b border-border/40 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-foreground text-base">Customer Chats</h2>
+              <div className="flex rounded-lg bg-muted/60 p-0.5 text-xs">
                 <button
-                  onClick={() => setFilter('all')}
-                  className={`flex-1 py-1 text-xs rounded-md font-medium transition-colors ${filter === 'all' ? 'bg-primary/10 text-primary font-semibold' : 'text-muted-foreground hover:bg-muted'}`}
+                  onClick={() => setFilterMode('all')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    filterMode === 'all' ? 'bg-card text-foreground shadow-2xs' : 'text-muted-foreground'
+                  }`}
                 >
-                  All ({threads.length})
+                  All
                 </button>
                 <button
-                  onClick={() => setFilter('unread')}
-                  className={`flex-1 py-1 text-xs rounded-md font-medium transition-colors ${filter === 'unread' ? 'bg-primary/10 text-primary font-semibold' : 'text-muted-foreground hover:bg-muted'}`}
+                  onClick={() => setFilterMode('unread')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    filterMode === 'unread' ? 'bg-card text-foreground shadow-2xs' : 'text-muted-foreground'
+                  }`}
                 >
-                  Unread ({threads.filter(t => t.unread_count > 0).length})
+                  Unread
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-border/40">
-              {loading ? (
-                <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-              ) : visibleThreads.length === 0 ? (
-                <div className="text-center py-12 text-xs text-muted-foreground">No chats found</div>
-              ) : (
-                visibleThreads.map(t => {
-                  const active = activeTicketId === t.ticket_id;
-                  return (
-                    <button
-                      key={t.ticket_id}
-                      onClick={() => openChat(t)}
-                      className={`w-full text-left p-3 transition-colors flex items-start gap-2.5 ${active ? 'bg-primary/10' : 'hover:bg-muted/40'}`}
-                    >
-                      <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-600 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
-                        {t.customer_name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <p className="text-xs font-semibold text-foreground truncate">{t.customer_name}</p>
-                          <span className="text-[10px] text-muted-foreground shrink-0">
-                            {format(new Date(t.last_time), 'h:mm a')}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{t.last_message}</p>
-                      </div>
-                      {t.unread_count > 0 && (
-                        <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-1">
-                          {t.unread_count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })
-              )}
+            <div className="relative">
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search name, email, phone..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs bg-muted/40 border border-border/40 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
           </div>
 
-          {/* Conversation Screen */}
-          <div className={`${activeTicketId ? 'flex' : 'hidden md:flex'} flex-col bg-card border border-border/60 rounded-2xl overflow-hidden shadow-2xs`}>
-            {activeTicketId && activeCustomer ? (
-              <>
-                {/* Header */}
-                <div className="px-4 py-2.5 bg-muted/30 border-b border-border/50 flex items-center justify-between gap-2 shrink-0">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setActiveTicketId(null)}
-                      className="md:hidden h-8 w-8 -ml-1.5 text-muted-foreground"
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                    </Button>
-                    <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-600 font-bold flex items-center justify-center text-xs shrink-0">
-                      {activeCustomer.customer_name.charAt(0).toUpperCase()}
+          {/* List Content */}
+          <div className="flex-1 overflow-y-auto divide-y divide-border/20">
+            {loading ? (
+              <div className="p-8 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading chats...
+              </div>
+            ) : filteredThreads.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground text-sm">
+                No chats found
+              </div>
+            ) : (
+              filteredThreads.map((t) => {
+                const isSelected = t.ticketId === activeTicketId;
+                const initials = t.customerName
+                  .split(' ')
+                  .map(n => n[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase() || 'CU';
+
+                return (
+                  <button
+                    key={t.ticketId}
+                    onClick={() => handleSelectThread(t.ticketId)}
+                    className={`w-full text-left p-3.5 flex items-start gap-3 transition-colors ${
+                      isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                      {initials}
                     </div>
-                    <div className="min-w-0">
-                      <h2 className="text-sm font-semibold text-foreground truncate">{activeCustomer.customer_name}</h2>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {activeCustomer.customer_phone || activeCustomer.customer_email || 'Customer'}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-semibold text-foreground text-sm truncate">
+                          {t.customerName}
+                        </span>
+                        {t.lastMessageTime && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {format(new Date(t.lastMessageTime), 'p')}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/75 truncate mb-0.5">
+                        {t.customerEmail}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {t.lastMessage}
                       </p>
                     </div>
-                  </div>
+                    {t.unreadCount > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {t.unreadCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </aside>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Clear Entire Chat History */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setDeleteConfirmOpen(true)}
-                      className="h-8 px-2.5 text-xs gap-1.5 rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10"
-                      title="Clear all messages for this customer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Clear Chat</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openChat(activeCustomer)}
-                      className="h-8 w-8 text-muted-foreground"
-                      title="Refresh"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </Button>
+        {/* Right Area: Conversation Pane */}
+        <section
+          className={`${
+            !activeTicketId ? 'hidden md:flex' : 'flex'
+          } flex-1 flex-col h-full bg-muted/10 min-w-0 relative`}
+        >
+          {activeTicketId && activeThread ? (
+            <>
+              {/* WhatsApp-Style Top Header */}
+              <div className="h-14 px-3 md:px-4 border-b border-border/40 bg-card/80 backdrop-blur flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <button
+                    onClick={handleBackToList}
+                    className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+
+                  <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                    {activeThread.customerName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-foreground truncate leading-tight">
+                      {activeThread.customerName}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {activeThread.customerEmail} {activeThread.customerPhone && • activeThread.customerPhone}
+                    </p>
                   </div>
                 </div>
 
-                {/* Messages Container */}
-                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/5">
-                  {messagesLoading ? (
-                    <div className="flex justify-center items-center h-full">
-                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center p-6 text-muted-foreground">
-                      <Headphones className="w-10 h-10 mb-2 opacity-30 text-primary" />
-                      <p className="text-sm font-medium text-foreground">Chat is empty</p>
-                      <p className="text-xs max-w-xs mt-1">No messages in this conversation yet.</p>
-                    </div>
-                  ) : (
-                    messages.map((m, idx) => {
-                      const isOut = m.sender_role === 'admin';
-                      const showDate = idx === 0 || formatDividerDate(m.created_at) !== formatDividerDate(messages[idx - 1].created_at);
+                {/* Options Menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <MoreVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => setClearDialogOpen(true)}
+                      className="text-destructive focus:text-destructive flex items-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" /> Clear Chat History
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
-                      return (
-                        <div key={m.id} className="space-y-3">
-                          {showDate && (
-                            <div className="flex justify-center my-2">
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border/40 shadow-2xs">
-                                {formatDividerDate(m.created_at)}
-                              </span>
-                            </div>
-                          )}
+              {/* Scrollable Message Area */}
+              <div className="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-4">
+                {loadingMessages ? (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading messages...
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+                    <MessageSquare className="w-10 h-10 mb-2 opacity-40 text-primary" />
+                    <p className="text-sm font-medium">No messages in this chat</p>
+                    <p className="text-xs mt-1">Send a message below to reach this customer.</p>
+                  </div>
+                ) : (
+                  groupedMessages.map((group, gIdx) => (
+                    <div key={gIdx} className="space-y-3">
+                      {/* Date Divider */}
+                      <div className="flex justify-center my-2">
+                        <span className="text-[11px] font-medium text-muted-foreground bg-card/90 border border-border/40 px-3 py-1 rounded-full shadow-2xs">
+                          {formatDateDivider(group.date)}
+                        </span>
+                      </div>
 
-                          <div className={`flex w-full ${isOut ? 'justify-end' : 'justify-start'}`}>
+                      {/* Bubbles */}
+                      {group.items.map((msg) => {
+                        const isMe = msg.sender_role === 'admin';
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                          >
                             <div
-                              className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-2xs text-sm ${
-                                isOut
-                                  ? 'bg-blue-600 text-white rounded-br-xs'
-                                  : 'bg-card border border-border/60 text-foreground rounded-bl-xs'
+                              className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3.5 py-2.5 shadow-2xs relative ${
+                                isMe
+                                  ? 'bg-primary text-primary-foreground rounded-br-xs'
+                                  : 'bg-card text-card-foreground border border-border/40 rounded-bl-xs'
                               }`}
                             >
-                              {!isOut && (
-                                <p className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 mb-0.5">
-                                  {activeCustomer.customer_name}
+                              {!isMe && (
+                                <p className="text-[11px] font-semibold text-primary mb-1">
+                                  {activeThread.customerName}
                                 </p>
                               )}
-                              <p className="whitespace-pre-wrap break-words leading-relaxed">{m.message}</p>
-                              {m.attachment_url && <div className="mt-2"><AttachmentRenderer url={m.attachment_url} /></div>}
-                              <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isOut ? 'text-white/70' : 'text-muted-foreground/70'}`}>
-                                <span>{format(new Date(m.created_at), 'h:mm a')}</span>
-                                {isOut && <CheckCheck className="w-3 h-3 text-white/90" />}
+
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                {msg.message}
+                              </p>
+
+                              {msg.attachment_url && (
+                                <div className="mt-2">
+                                  <AttachmentRenderer url={msg.attachment_url} />
+                                </div>
+                              )}
+
+                              <div
+                                className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
+                                  isMe ? 'text-primary-foreground/75' : 'text-muted-foreground'
+                                }`}
+                              >
+                                <span>{format(new Date(msg.created_at), 'p')}</span>
+                                {isMe && (
+                                  msg.read_at ? (
+                                    <CheckCheck className="w-3.5 h-3.5 text-emerald-300" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5 opacity-80" />
+                                  )
+                                )}
                               </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Composer */}
-                <div className="p-3 bg-card border-t border-border/50 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <input type="file" ref={fileInputRef} onChange={e => { const f = e.target.files?.[0]; if (f) setAttachment(f); }} className="hidden" accept="image/*,.pdf" />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </Button>
-                    <Input
-                      placeholder="Reply to customer..."
-                      value={replyText}
-                      onChange={e => setReplyText(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
-                      className="h-10 text-sm rounded-full bg-muted/40 border-border/60 px-4 focus-visible:ring-1"
-                    />
-                    <Button
-                      onClick={sendReply}
-                      disabled={sending || (!replyText.trim() && !attachment)}
-                      size="icon"
-                      className="h-10 w-10 rounded-full shrink-0 bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center p-6 text-muted-foreground">
-                <Headphones className="w-12 h-12 mb-3 opacity-30 text-primary" />
-                <p className="text-sm font-medium text-foreground">Select a conversation</p>
-                <p className="text-xs max-w-xs mt-1">Choose a customer chat from the list on the left to start replying.</p>
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Clear Whole Chat Confirmation Modal */}
-        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Entire Chat History?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete all messages exchanged with <strong>{activeCustomer?.customer_name}</strong>. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={clearingChat}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleClearWholeChat}
-                disabled={clearingChat}
-                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-              >
-                {clearingChat ? 'Deleting...' : 'Delete Entire Chat'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              {/* Composer */}
+              <div className="p-2 md:p-3 bg-card border-t border-border/40 shrink-0">
+                {attachment && (
+                  <div className="flex items-center justify-between bg-muted/60 px-3 py-1.5 rounded-lg mb-2 text-xs">
+                    <span className="truncate text-foreground font-medium flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-primary" />
+                      {attachment.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachment(null)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <form
+                  onSubmit={handleSendMessage}
+                  className="flex items-end gap-1.5 md:gap-2 max-w-4xl mx-auto"
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) setAttachment(e.target.files[0]);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </Button>
+
+                  <Textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={replyText}
+                    onChange={handleTextareaChange}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder="Type an admin reply..."
+                    className="min-h-[40px] max-h-[120px] resize-none rounded-2xl bg-muted/40 border-border/50 text-sm py-2 px-3.5 focus-visible:ring-1 leading-relaxed"
+                  />
+
+                  <Button
+                    type="submit"
+                    disabled={(!replyText.trim() && !attachment) || sending}
+                    className="h-10 w-10 shrink-0 rounded-full p-0 flex items-center justify-center bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+                  >
+                    {sending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4 ml-0.5" />
+                    )}
+                  </Button>
+                </form>
+              </div>
+
+              {/* Clear History Confirmation Dialog */}
+              <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Clear Chat History?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently remove all messages for this customer conversation. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleClearHistory}
+                      disabled={clearing}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {clearing ? 'Clearing...' : 'Clear History'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
+              <LifeBuoy className="w-12 h-12 mb-3 opacity-30 text-primary" />
+              <p className="font-semibold text-foreground">Select a customer</p>
+              <p className="text-xs text-muted-foreground max-w-xs mt-1">
+                Choose a customer from the left list to view and reply to their messages.
+              </p>
+            </div>
+          )}
+        </section>
       </div>
     </AdminLayout>
   );

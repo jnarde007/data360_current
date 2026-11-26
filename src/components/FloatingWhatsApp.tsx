@@ -43,6 +43,9 @@ function useScrollDirection() {
 
 export function FloatingWhatsApp() {
   const location = useLocation();
+  const isSupportPage = location.pathname.startsWith("/support") || location.pathname.startsWith("/admin/support");
+  if (isSupportPage) return null;
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [urls, setUrls] = useState({ support: '', channel: '' });
   const [loading, setLoading] = useState(true);
