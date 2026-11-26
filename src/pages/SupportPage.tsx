@@ -489,13 +489,11 @@ export default function SupportPage() {
                 return (
                   <div
                     key={msg.id}
-                    className={`flex ${isCustomer ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${isCustomer ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'}`}
                   >
                     <div
                       className={`relative max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 text-xs sm:text-[13px] leading-relaxed shadow-xs ${
-                        isCustomer
-                          ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-xs'
-                          : 'bg-[#202c33] text-[#e9edef] rounded-tl-xs'
+                        isCustomer ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
                       }`}
                     >
                       {/* Order Context Tag on Bubble */}

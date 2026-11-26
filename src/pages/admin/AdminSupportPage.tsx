@@ -768,7 +768,7 @@ export default function AdminSupportPage() {
               <main
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 overscroll-contain bg-muted/15"
+                className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 overscroll-contain bg-[#F4F7FB]"
               >
                 {loadingMessages ? (
                   <div className="h-full flex items-center justify-center">
@@ -821,21 +821,17 @@ export default function AdminSupportPage() {
                         return (
                           <div
                             key={msg.id}
-                            className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
+                            className={`flex flex-col ${isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'}`}
                           >
                             <div
                               className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${
-                                isAdmin
-                                  ? 'bg-primary text-primary-foreground rounded-br-xs'
-                                  : 'bg-card text-foreground border border-border/40 rounded-bl-xs'
+                                isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
                               }`}
                             >
                               {orderCardData && (
                                 <div
                                   className={`mb-2 p-2 rounded-xl border text-xs ${
-                                    isAdmin
-                                      ? 'bg-black/15 border-white/20 text-white'
-                                      : 'bg-muted/70 border-border/60 text-foreground'
+                                    isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between gap-2 font-semibold pb-1 border-b border-current/15 mb-1.5">
@@ -878,9 +874,7 @@ export default function AdminSupportPage() {
 
                               <div
                                 className={`mt-1 flex items-center justify-end gap-1 text-[10px] select-none ${
-                                  isAdmin
-                                    ? 'text-primary-foreground/75'
-                                    : 'text-muted-foreground/75'
+                                  isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
                                 }`}
                               >
                                 <span>
