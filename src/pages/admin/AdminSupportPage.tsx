@@ -821,12 +821,10 @@ export default function AdminSupportPage() {
                         return (
                           <div
                             key={msg.id}
-                            className={`flex flex-col ${isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'}`}
+                            className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
                           >
                             <div
-                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${
-                                isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
-                              }`}
+                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isAdmin ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
                             >
                               {orderCardData && (
                                 <div
