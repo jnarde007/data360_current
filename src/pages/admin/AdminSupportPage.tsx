@@ -104,7 +104,7 @@ export default function AdminSupportPage() {
     try {
       const { data: tickets, error } = await supabase
         .from('support_tickets')
-        .select('id, customer_id, updated_at, admin_cleared_at')
+        .select('id, customer_id, updated_at, admin_cleared_at, message, created_at')
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
@@ -115,13 +115,14 @@ export default function AdminSupportPage() {
       }
 
       // Group latest ticket per customer
-      const customerMap = new Map<string, { tid: string; clearedAt: string | null; updatedAt: string }>();
+      const customerMap = new Map<string, { tid: string; clearedAt: string | null; updatedAt: string; ticketMsg: string }>();
       tickets.forEach(t => {
         if (!customerMap.has(t.customer_id)) {
           customerMap.set(t.customer_id, {
             tid: t.id,
             clearedAt: (t as any).admin_cleared_at || null,
-            updatedAt: t.updated_at
+            updatedAt: t.updated_at,
+            ticketMsg: t.message
           });
         }
       });
@@ -134,7 +135,7 @@ export default function AdminSupportPage() {
 
       const profileLookup = new Map((profiles || []).map(p => [p.id, p]));
 
-      const threadResults: CustomerThread[] = await Promise.all(
+      const threadResults: (CustomerThread | null)[] = await Promise.all(
         customerIds.map(async (cid) => {
           const entry = customerMap.get(cid)!;
           const profile = profileLookup.get(cid);
@@ -144,7 +145,6 @@ export default function AdminSupportPage() {
             .select('message, created_at, sender_role, read_at')
             .eq('ticket_id', entry.tid);
 
-          // Only show messages after admin cleared time
           if (entry.clearedAt) {
             query = query.gt('created_at', entry.clearedAt);
           }
@@ -153,7 +153,14 @@ export default function AdminSupportPage() {
             .order('created_at', { ascending: false })
             .limit(10);
 
-          const lastMsg = msgs && msgs[0];
+          const hasRealMessages = msgs && msgs.length > 0;
+          const lastMsg = hasRealMessages ? msgs[0] : null;
+
+          // If no messages exist at all after clearing, filter out this thread
+          if (!hasRealMessages) {
+            return null;
+          }
+
           const unread = (msgs || []).filter(
             m => m.sender_role === 'customer' && !m.read_at
           ).length;
@@ -164,19 +171,23 @@ export default function AdminSupportPage() {
             customerName: profile?.full_name || 'Customer',
             customerEmail: profile?.email || 'No email',
             customerPhone: profile?.phone || '',
-            lastMessage: lastMsg ? lastMsg.message : 'No messages',
+            lastMessage: lastMsg?.message || '',
             lastMessageTime: lastMsg?.created_at || entry.updatedAt || new Date().toISOString(),
             unreadCount: unread,
           };
         })
       );
 
+      // Filter out nulls (customers who have no messages)
+      const validThreads = threadResults.filter((t): t is CustomerThread => t !== null);
+
       // Sort recent messages strictly to the top (descending)
-      threadResults.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+      validThreads.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
-      setThreads(threadResults);
+      setThreads(validThreads);
 
-      const targetTicket = searchParams.get('chat') || threadResults[0]?.ticketId;
+      const currentSelected = searchParams.get('chat');
+      const targetTicket = currentSelected || validThreads[0]?.ticketId;
       if (targetTicket && !activeTicketId) {
         setActiveTicketId(targetTicket);
       }
@@ -187,10 +198,13 @@ export default function AdminSupportPage() {
     }
   }, [searchParams, activeTicketId]);
 
-  const fetchMessages = useCallback(async (ticketId: string, smoothScroll = false) => {
-    setLoadingMessages(true);
+  const fetchMessages = useCallback(async (ticketId: string, isBackground = false) => {
+    // Only show the spinner on manual navigation when switching tickets, not on background live sync
+    if (!isBackground) {
+      setLoadingMessages(true);
+    }
+
     try {
-      // Fetch admin cleared timestamp
       const { data: ticketData } = await supabase
         .from('support_tickets')
         .select('admin_cleared_at')
@@ -211,16 +225,17 @@ export default function AdminSupportPage() {
       if (error) throw error;
       setMessages((data as Message[]) || []);
 
-      await supabase.rpc('mark_support_messages_read', {
+      // Non-blocking read receipt update in background
+      supabase.rpc('mark_support_messages_read', {
         p_ticket_id: ticketId,
         p_reader_role: 'admin'
-      });
+      }).then(() => {
+        setThreads(prev =>
+          prev.map(t => (t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t))
+        );
+      }).catch(() => {});
 
-      setThreads(prev =>
-        prev.map(t => (t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t))
-      );
-
-      setTimeout(() => scrollToBottom(smoothScroll), 40);
+      setTimeout(() => scrollToBottom(isBackground), 40);
     } catch (err: any) {
       console.error('Error fetching messages:', err);
     } finally {
@@ -242,7 +257,7 @@ export default function AdminSupportPage() {
     ['support_messages', 'support_tickets'],
     () => {
       if (activeTicketId) {
-        fetchMessages(activeTicketId, true);
+        fetchMessages(activeTicketId, true); // true = silent background refresh
       }
       fetchThreads();
     },
@@ -250,6 +265,7 @@ export default function AdminSupportPage() {
   );
 
   const handleSelectThread = (ticketId: string) => {
+    if (ticketId === activeTicketId) return;
     setActiveTicketId(ticketId);
     setSearchParams({ chat: ticketId });
   };
@@ -331,7 +347,6 @@ export default function AdminSupportPage() {
       // Replace temp message with confirmed db row
       setMessages(prev => prev.map(m => m.id === tempId ? (newMsg as Message) : m));
     } catch (err: any) {
-      // Revert optimistic bubble if failed
       setMessages(prev => prev.filter(m => m.id !== tempId));
       toast({
         title: 'Failed to send reply',
@@ -416,7 +431,7 @@ export default function AdminSupportPage() {
   return (
     <AdminLayout>
       <div className="w-full h-[calc(100dvh-5rem)] flex bg-background rounded-2xl border border-border/50 overflow-hidden shadow-xs">
-        {/* Left Sidebar: Customer Conversations (Recent at top) */}
+        {/* Left Sidebar: Customer Conversations */}
         <aside
           className={
             (activeTicketId ? 'hidden md:flex' : 'flex') +
@@ -472,7 +487,7 @@ export default function AdminSupportPage() {
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-xs">
-                {searchQuery ? 'No matching chats found' : 'No support conversations yet'}
+                {searchQuery ? 'No matching chats found' : 'No active support conversations'}
               </div>
             ) : (
               filteredThreads.map((thread) => {
