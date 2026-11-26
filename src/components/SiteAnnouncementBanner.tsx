@@ -19,6 +19,9 @@ interface AnnouncementData {
 
 export function SiteAnnouncementBanner() {
   const location = useLocation();
+  const isChatPage = location.pathname.startsWith('/support') || location.pathname.startsWith('/admin/support');
+  if (isChatPage) return null;
+  const location = useLocation();
   const [data, setData] = useState<AnnouncementData>({
     enabled: false,
     title: "",
