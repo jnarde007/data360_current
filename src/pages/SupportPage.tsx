@@ -392,9 +392,9 @@ export default function SupportPage() {
   }, [messages]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0b141a] text-slate-100 overflow-hidden font-sans select-none">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#F4F7FB] text-slate-900 overflow-hidden font-sans select-none">
       {/* WhatsApp Header */}
-      <header className="h-14 shrink-0 bg-[#202c33] border-b border-[#222d34] px-3 sm:px-4 flex items-center justify-between shadow-xs">
+      <header className="h-14 shrink-0 bg-white border-b border-border/40 px-3 sm:px-4 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Button
             variant="ghost"
@@ -413,7 +413,7 @@ export default function SupportPage() {
           </div>
 
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-slate-100 truncate flex items-center gap-2">
+            <h1 className="text-sm font-semibold text-slate-900 truncate flex items-center gap-2">
               <span className="font-bold !text-blue-600">DATA360 Support</span>
             </h1>
             <p className="text-[11px] text-emerald-400 font-medium leading-none">
@@ -432,7 +432,7 @@ export default function SupportPage() {
               <MoreVertical className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44 bg-[#233138] border-[#2f3b43] text-slate-200">
+          <DropdownMenuContent align="end" className="w-44 bg-card border-border/40 text-slate-200">
             <DropdownMenuItem
               onClick={() => setDeleteDialogOpen(true)}
               className="text-rose-400 focus:text-rose-300 focus:bg-rose-500/10 cursor-pointer text-xs gap-2"
@@ -448,7 +448,7 @@ export default function SupportPage() {
       <main
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-3 bg-[#0b141a] overscroll-contain"
+        className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-3 bg-[#F4F7FB] overscroll-contain"
         style={{
           backgroundImage:
             'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.02) 1px, transparent 1px)',
@@ -461,7 +461,7 @@ export default function SupportPage() {
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
-            <div className="w-12 h-12 rounded-full bg-[#111b21] flex items-center justify-center mb-3 text-slate-500">
+            <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center mb-3 text-slate-500">
               <LifeBuoy className="w-6 h-6" />
             </div>
             <p className="text-sm font-semibold text-slate-300">Welcome to <span className="font-bold !text-blue-600">DATA360 Support</span></p>
@@ -474,7 +474,7 @@ export default function SupportPage() {
             <div key={group.dateLabel} className="space-y-2">
               {group.dateLabel && (
                 <div className="flex justify-center my-3">
-                  <span className="px-2.5 py-0.5 rounded-md bg-[#182229] border border-[#222d34] text-[11px] font-medium text-slate-400 shadow-xs">
+                  <span className="px-2.5 py-0.5 rounded-md bg-[#182229] border border-border/40 text-[11px] font-medium text-slate-400 shadow-xs">
                     {group.dateLabel}
                   </span>
                 </div>
@@ -546,15 +546,15 @@ export default function SupportPage() {
       </main>
 
       {/* WhatsApp Composer */}
-      <footer className="shrink-0 bg-[#202c33] border-t border-[#222d34] p-2 sm:p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <footer className="shrink-0 bg-white border-t border-border/40 p-2 sm:p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {attachment && (
-          <div className="mb-2 px-2.5 py-1.5 bg-[#111b21] rounded-lg flex items-center justify-between text-xs border border-[#2a3942]">
+          <div className="mb-2 px-2.5 py-1.5 bg-white rounded-lg flex items-center justify-between text-xs border border-border/40">
             <span className="truncate max-w-[200px] text-slate-300 font-mono">
               {attachment.name}
             </span>
             <button
               onClick={() => setAttachment(null)}
-              className="text-slate-400 hover:text-white"
+              className="text-slate-600 hover:text-slate-900"
             >
               <X className="w-4 h-4" />
             </button>
@@ -576,7 +576,7 @@ export default function SupportPage() {
             type="button"
             variant="ghost"
             size="icon"
-            className="h-10 w-10 shrink-0 rounded-full text-slate-400 hover:text-white hover:bg-white/10"
+            className="h-10 w-10 shrink-0 rounded-full text-slate-600 hover:text-slate-900 hover:bg-white/10"
             onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="w-5 h-5" />
@@ -589,14 +589,14 @@ export default function SupportPage() {
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             rows={1}
-            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-[#2a3942] border-none text-slate-100 placeholder:text-slate-400 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-emerald-500 leading-relaxed"
+            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-slate-100 border-none text-slate-900 placeholder:text-slate-500 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-emerald-500 leading-relaxed"
           />
 
           <Button
             type="submit"
             disabled={(!replyText.trim() && !attachment) || sending}
             size="icon"
-            className="h-10 w-10 shrink-0 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white shadow-xs disabled:opacity-40"
+            className="h-10 w-10 shrink-0 rounded-full bg-[#4E89E8] hover:bg-[#3B74CC] text-white shadow-xs disabled:opacity-40"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -609,7 +609,7 @@ export default function SupportPage() {
 
       {/* Clear Chat Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="max-w-[340px] rounded-2xl bg-[#233138] border-[#2f3b43] text-slate-100">
+        <AlertDialogContent className="max-w-[340px] rounded-2xl bg-card border-border/40 text-slate-900">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-base font-semibold">
               Delete Message History?
