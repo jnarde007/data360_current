@@ -208,6 +208,7 @@ export default function OrdersPage() {
 
       setReportText('');
       setReportIssueOrder(null);
+      navigate('/support');
     } catch (err: any) {
       console.error('Failed to submit order report:', err);
       toast({
@@ -515,7 +516,7 @@ export default function OrdersPage() {
               <Textarea
                 value={reportText}
                 onChange={(e) => setReportText(e.target.value)}
-                placeholder="What seems to be the problem with this order? (e.g. data hasn't arrived, wrong number, etc.)"
+                placeholder="Tell us what went wrong with this order..."
                 rows={4}
                 required
                 className="resize-none text-xs sm:text-[13px] rounded-xl bg-muted/30 focus-visible:ring-1 focus-visible:ring-primary"
