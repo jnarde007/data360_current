@@ -16,12 +16,10 @@ import {
 } from '@/components/ui/table';
 import { ShoppingCart, Search, Loader2, Wallet2, LifeBuoy } from 'lucide-react';
 import { DetailViewDialog } from '@/components/DetailViewDialog';
-import { ReportOrderDialog } from '@/components/support/ReportOrderDialog';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DateFilter, filterByDate, type DatePreset } from '@/components/DateFilter';
 import { Pagination } from '@/components/Pagination';
-import { MobileCard } from '@/components/MobileCard';
 import { getNetworkAccent, getNetworkStripe, formatPhoneSpaced } from '@/lib/network-colors';
 import mtnLogo from '@/assets/mtn-logo.png';
 import atLogo from '@/assets/at-logo.png';
@@ -59,28 +57,28 @@ export default function OrdersPage() {
   const [customDate, setCustomDate] = useState<Date>();
   const [detailOrder, setDetailOrder] = useState<OrderRow | null>(null);
   const [refundEvidence, setRefundEvidence] = useState<Record<string, RefundEvidence>>({});
-  const [reportIssueOrder, setReportIssueOrder] = useState<OrderRow | null>(null);
-  const handleReportOrder = (o: OrderRow) => {
-    const shortId = o.short_id || o.id.slice(0, 8);
-    const network = o.network || '';
-    const volume = o.volume_gb ? `${o.volume_gb}GB` : '';
-    const phone = o.recipient_phone || o.phone || '';
-    const status = o.status;
-    const msg = `Issue with order ${shortId} (${network} ${volume} to ${phone}). Status: ${status}`;
-    navigate(`/support?reportMsg=${encodeURIComponent(msg)}&orderId=${o.id}`);
-  };
   const deepLinkedRef = useRef(false);
+
+  // Directly navigate to live chat with order context
+  const handleReportOrder = (o: OrderRow) => {
+    navigate(
+      `/support?orderShortId=${encodeURIComponent(o.short_id)}&orderId=${encodeURIComponent(o.id)}&network=${encodeURIComponent(o.network)}&volume=${encodeURIComponent(o.bundle_size)}&phone=${encodeURIComponent(o.recipient_phone)}&status=${encodeURIComponent(o.status)}`
+    );
+  };
 
   const loadOrders = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const { data, error } = await supabase.from('orders').select('id, short_id, network, bundle_size, recipient_phone, quantity, total_amount, status, created_at, grace_period_ends_at, delivery_mode, provider_name, provider_order_id, provider_reference, buyer_type, buyer_phone, buyer_email, payment_method, payment_reference, customer_id, affiliate_code, tracking_token, payment_verified_at, linked_customer_id').eq('customer_id', user.id).order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, short_id, network, bundle_size, recipient_phone, quantity, total_amount, status, created_at, grace_period_ends_at, delivery_mode, provider_name, provider_order_id, provider_reference, buyer_type, buyer_phone, buyer_email, payment_method, payment_reference, customer_id, affiliate_code, tracking_token, payment_verified_at, linked_customer_id')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false });
+
       if (error) throw error;
       const rows = ((data || []) as unknown) as OrderRow[];
       setOrders(rows);
 
-      // Refund evidence â€” a "failed" order is only "Refunded" when the refund
-      // ledger (or a legacy wallet credit) actually confirms the money returned.
       const [{ data: refunds }, { data: credits }] = await Promise.all([
         supabase.from('refunds')
           .select('order_id, status, refund_method, refund_amount, total_refunded, completed_at, created_at')
@@ -112,7 +110,6 @@ export default function OrdersPage() {
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useRealtimeRefresh(['orders'], loadOrders, 'customer-orders-live');
 
-  // Deep-link: auto-open order detail from ?order= param
   useEffect(() => {
     if (deepLinkedRef.current || loading || orders.length === 0) return;
     const orderParam = searchParams.get('order');
@@ -265,10 +262,10 @@ export default function OrdersPage() {
                             : <ShoppingCart className="w-4 h-4 text-muted-foreground" />}
                         </div>
                         <div className="min-w-0 flex-1 space-y-0.5">
-                          <p className="text-sm font-semibold text-foreground truncate">{o.network} Â· {o.bundle_size}</p>
+                          <p className="text-sm font-semibold text-foreground truncate">{o.network} · {o.bundle_size}</p>
                           <p className="text-xs font-mono tracking-wide text-muted-foreground">{formatPhoneSpaced(o.recipient_phone)}</p>
                           <p className="text-[10px] text-muted-foreground/70">
-                            {o.short_id} Â· {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} Â· {new Date(o.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                            {o.short_id} · {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {new Date(o.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
                         <div className="text-right shrink-0 space-y-1 flex flex-col items-end">
@@ -371,7 +368,7 @@ export default function OrdersPage() {
             status: <StatusBadge status={statusViewFor(detailOrder).badgeStatus} />,
           } : undefined}
           fields={detailOrder ? [
-            { label: 'Date', value: new Date(detailOrder.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' â€¢ ' + new Date(detailOrder.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) },
+            { label: 'Date', value: new Date(detailOrder.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' • ' + new Date(detailOrder.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) },
             { label: 'Bundle', value: detailOrder.bundle_size },
             ...(detailOrder.quantity > 1 ? [{ label: 'Quantity', value: String(detailOrder.quantity) }] : []),
             { label: 'Recipient', value: <span className="font-mono tracking-wide">{formatPhoneSpaced(detailOrder.recipient_phone)}</span> },
@@ -407,21 +404,7 @@ export default function OrdersPage() {
             }
           }}
         />
-        {reportIssueOrder && (
-          <CreateTicketDialog
-            open={!!reportIssueOrder}
-            onOpenChange={(v) => { if (!v) setReportIssueOrder(null); }}
-            defaultCategory={
-              isFailed(reportIssueOrder.status) ? 'Order failed'
-              : reportIssueOrder.status === 'customer_cancelled' || reportIssueOrder.status === 'cancelled_before_processing' ? 'Order failed'
-              : 'Order delayed'
-            }
-            relatedOrderId={reportIssueOrder.id}
-            relatedOrderShortId={reportIssueOrder.short_id}
-          />
-        )}
       </div>
     </CustomerLayout>
   );
 }
-

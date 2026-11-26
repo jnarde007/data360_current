@@ -84,7 +84,6 @@ export default function AdminSupportPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
 
-  // Direct scroll to bottom
   const scrollToBottom = useCallback((smooth = false) => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -99,10 +98,9 @@ export default function AdminSupportPage() {
     }
   }, []);
 
-  // Multi-stage paint anchor
   const forceScrollToBottom = useCallback((smooth = false) => {
     scrollToBottom(smooth);
-    const raf1 = requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => {
       scrollToBottom(smooth);
       requestAnimationFrame(() => scrollToBottom(smooth));
     });
@@ -110,14 +108,13 @@ export default function AdminSupportPage() {
     const t2 = setTimeout(() => scrollToBottom(smooth), 180);
     const t3 = setTimeout(() => scrollToBottom(smooth), 350);
     return () => {
-      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
     };
   }, [scrollToBottom]);
 
-  // Track if admin manually scrolled up
   const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -125,17 +122,12 @@ export default function AdminSupportPage() {
     isNearBottomRef.current = distanceToBottom < 120;
   }, []);
 
-  // Snap to bottom the instant messages render
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
-
     const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current) {
-        el.scrollTop = el.scrollHeight;
-      }
+      if (isNearBottomRef.current) el.scrollTop = el.scrollHeight;
     });
-
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -192,7 +184,6 @@ export default function AdminSupportPage() {
         const clearedAt = ticket.admin_cleared_at ? new Date(ticket.admin_cleared_at).getTime() : 0;
         const validMsgs = ticketMsgs.filter((m) => new Date(m.created_at).getTime() > clearedAt);
 
-        // Exclude completely empty tickets
         if (validMsgs.length === 0 && !ticket.message) return;
 
         const latestMsg = validMsgs[0];
@@ -200,7 +191,8 @@ export default function AdminSupportPage() {
           (m) => m.sender_role === 'customer' && !m.read_at
         ).length;
 
-        const resolvedName = cust?.full_name?.trim() || cust?.username || cust?.email?.split('@')[0] || 'Customer';
+        const resolvedName =
+          cust?.full_name?.trim() || cust?.username || cust?.email?.split('@')[0] || 'Customer';
         const resolvedEmail = cust?.email || 'No email';
         const resolvedPhone = cust?.phone || undefined;
 
@@ -216,7 +208,7 @@ export default function AdminSupportPage() {
         });
       });
 
-      // Strict descending order: most recent message ALWAYS at top
+      // Strict descending: most recent message at top
       threadList.sort(
         (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       );
@@ -252,15 +244,12 @@ export default function AdminSupportPage() {
       }
 
       const { data, error } = await query.order('created_at', { ascending: true });
-
       if (error) throw error;
+
       setMessages((data as Message[]) || []);
+      if (!isBackground) isNearBottomRef.current = true;
 
-      if (!isBackground) {
-        isNearBottomRef.current = true;
-      }
-
-      // Mark notifications as read for this ticket
+      // Clear admin notifications for support
       supabase
         .from('notifications')
         .update({ read: true } as any)
@@ -270,7 +259,7 @@ export default function AdminSupportPage() {
         .then(() => {})
         .catch(() => {});
 
-      // Mark read in background
+      // Mark messages read in background
       supabase
         .rpc('mark_support_messages_read', {
           p_ticket_id: ticketId,
@@ -300,7 +289,7 @@ export default function AdminSupportPage() {
     }
   }, [activeTicketId, fetchMessages]);
 
-  // LIVE REALTIME WEBSOCKET: Active conversation streaming (<100ms)
+  // Realtime listener for active ticket
   useEffect(() => {
     if (!activeTicketId) return;
 
@@ -338,7 +327,6 @@ export default function AdminSupportPage() {
               })
               .catch(() => {});
 
-            // Clear admin notifications on incoming message to active ticket
             supabase
               .from('notifications')
               .update({ read: true } as any)
@@ -349,7 +337,6 @@ export default function AdminSupportPage() {
               .catch(() => {});
           }
 
-          // Bump active thread to top immediately
           setThreads((prev) => {
             const existing = prev.find((t) => t.ticketId === activeTicketId);
             if (!existing) return prev;
@@ -362,9 +349,7 @@ export default function AdminSupportPage() {
             return [updated, ...prev.filter((t) => t.ticketId !== activeTicketId)];
           });
 
-          if (isNearBottomRef.current) {
-            forceScrollToBottom(true);
-          }
+          if (isNearBottomRef.current) forceScrollToBottom(true);
         }
       )
       .subscribe();
@@ -374,7 +359,7 @@ export default function AdminSupportPage() {
     };
   }, [activeTicketId, forceScrollToBottom]);
 
-  // GLOBAL REALTIME: Any incoming customer message elsewhere immediately pops thread to top
+  // Global listener to bump threads
   useEffect(() => {
     const channel = supabase
       .channel('admin-support-global-messages')
@@ -421,7 +406,6 @@ export default function AdminSupportPage() {
     isNearBottomRef.current = true;
   };
 
-  // OPTIMISTIC SEND: Instant reply (0ms delay)
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = replyText.trim();
@@ -443,101 +427,96 @@ export default function AdminSupportPage() {
     setReplyText('');
     const sentAttachment = attachment;
     setAttachment(null);
-    if (textareaRef.current) textareaRef.current.style.height = '40px';
+    if (textareaRef.current) textareaRef.current.style.height = '42px';
 
-    isNearBottomRef.current = true;
     forceScrollToBottom(true);
     setSending(true);
 
-    setThreads((prev) => {
-      const current = prev.find((t) => t.ticketId === activeTicketId);
-      if (!current) return prev;
-      const updatedThread = {
-        ...current,
-        lastMessage: text || 'Attachment sent',
-        lastMessageTime: new Date().toISOString(),
-      };
-      return [updatedThread, ...prev.filter((t) => t.ticketId !== activeTicketId)];
-    });
-
     try {
-      let uploadedUrl: string | null = null;
+      let attachmentUrl: string | null = null;
       if (sentAttachment) {
-        const ext = sentAttachment.name.split('.').pop() || 'bin';
-        const filePath = `admin/${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from('support-attachments')
+        const fileExt = sentAttachment.name.split('.').pop();
+        const filePath = `support/${activeTicketId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('attachments')
           .upload(filePath, sentAttachment);
+        if (uploadError) throw uploadError;
 
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage
-            .from('support-attachments')
-            .getPublicUrl(filePath);
-          uploadedUrl = urlData?.publicUrl || null;
-        }
+        const { data: urlData } = supabase.storage
+          .from('attachments')
+          .getPublicUrl(filePath);
+        attachmentUrl = urlData.publicUrl;
       }
 
-      const { data: newMsg, error: insertErr } = await supabase
+      const { data: insertedMsg, error: sendErr } = await supabase
         .from('support_messages')
         .insert({
           ticket_id: activeTicketId,
           sender_id: user.id,
           sender_role: 'admin',
-          message: text || (uploadedUrl ? 'Sent an attachment' : ''),
-          attachment_url: uploadedUrl,
-        } as any)
+          message: text || (attachmentUrl ? 'Attachment sent' : ''),
+          attachment_url: attachmentUrl,
+        })
         .select()
         .single();
 
-      if (insertErr) throw insertErr;
+      if (sendErr) throw sendErr;
 
-      if (newMsg) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? (newMsg as Message) : m))
-        );
-      }
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? (insertedMsg as Message) : m))
+      );
+
+      setThreads((prev) => {
+        const existing = prev.find((t) => t.ticketId === activeTicketId);
+        if (!existing) return prev;
+        const updated = {
+          ...existing,
+          lastMessage: text || (attachmentUrl ? 'Attachment sent' : ''),
+          lastMessageTime: new Date().toISOString(),
+        };
+        return [updated, ...prev.filter((t) => t.ticketId !== activeTicketId)];
+      });
     } catch (err: any) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      console.error('Send message error:', err);
       toast({
-        title: 'Failed to send message',
-        description: err.message || 'Please try again',
+        title: 'Error sending message',
+        description: err.message || 'Please try again.',
         variant: 'destructive',
       });
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setSending(false);
     }
   };
 
-  // Safe Admin Clear: clears for admin, preserves customer messages
-  const handleDeleteConversation = async () => {
+  const handleClearHistory = async () => {
     if (!activeTicketId) return;
     setDeleting(true);
     try {
       const { error } = await supabase.rpc('admin_clear_chat_history', {
         p_ticket_id: activeTicketId,
       });
-
       if (error) throw error;
 
       setMessages([]);
-      setDeleteDialogOpen(false);
-
       setThreads((prev) =>
         prev.map((t) =>
           t.ticketId === activeTicketId
-            ? { ...t, lastMessage: 'Chat cleared (Admin view)', unreadCount: 0 }
+            ? { ...t, lastMessage: 'Chat cleared by admin', unreadCount: 0 }
             : t
         )
       );
 
       toast({
         title: 'Chat cleared',
-        description: 'Conversation messages cleared from admin view. Customer records preserved.',
+        description: 'Customer chat history has been cleared from your view.',
       });
+      setDeleteDialogOpen(false);
     } catch (err: any) {
+      console.error('Error clearing chat history:', err);
       toast({
-        title: 'Error clearing chat',
-        description: err.message || 'Please try again',
+        title: 'Failed to clear chat',
+        description: err.message || 'Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -545,21 +524,28 @@ export default function AdminSupportPage() {
     }
   };
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setReplyText(e.target.value);
-    const target = e.target;
-    target.style.height = 'auto';
-    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+    e.target.style.height = '42px';
+    const newHeight = Math.min(e.target.scrollHeight, 120);
+    e.target.style.height = `${newHeight}px`;
   };
 
   const filteredThreads = useMemo(() => {
     return threads.filter((t) => {
-      const matchesSearch =
+      const matchSearch =
         t.customerName.toLowerCase().includes(search.toLowerCase()) ||
         t.customerEmail.toLowerCase().includes(search.toLowerCase()) ||
         (t.customerPhone && t.customerPhone.includes(search));
-      const matchesFilter = filter === 'all' || (filter === 'unread' && t.unreadCount > 0);
-      return matchesSearch && matchesFilter;
+      const matchFilter = filter === 'all' || (filter === 'unread' && t.unreadCount > 0);
+      return matchSearch && matchFilter;
     });
   }, [threads, search, filter]);
 
@@ -569,130 +555,136 @@ export default function AdminSupportPage() {
   );
 
   const groupedMessages = useMemo(() => {
-    return messages.reduce((acc, msg) => {
-      const dateKey = msg.created_at ? format(new Date(msg.created_at), 'yyyy-MM-dd') : 'unknown';
-      if (!acc[dateKey]) acc[dateKey] = [];
-      acc[dateKey].push(msg);
-      return acc;
-    }, {} as Record<string, Message[]>);
+    const groups: { date: string; items: Message[] }[] = [];
+    messages.forEach((msg) => {
+      const dateKey = msg.created_at ? msg.created_at.split('T')[0] : 'unknown';
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.date === dateKey) {
+        lastGroup.items.push(msg);
+      } else {
+        groups.push({ date: dateKey, items: [msg] });
+      }
+    });
+    return groups;
   }, [messages]);
 
   return (
     <AdminLayout>
-      <div className="flex h-[calc(100dvh-4rem)] bg-background text-foreground overflow-hidden rounded-2xl border border-border/60 shadow-sm">
-        {/* LEFT INBOX SIDEBAR */}
+      <div className="h-[calc(100vh-4.25rem)] -m-4 sm:-m-6 flex bg-background overflow-hidden select-none">
+        {/* ── Left Sidebar (Inbox) ── */}
         <aside
-          className={`w-full md:w-80 lg:w-96 border-r border-border/50 flex flex-col bg-card/60 backdrop-blur-xs shrink-0 ${
+          className={`${
             activeTicketId ? 'hidden md:flex' : 'flex'
-          }`}
+          } w-full md:w-80 lg:w-96 flex-col border-r border-border/40 bg-card/60 backdrop-blur-xs shrink-0`}
         >
-          {/* Header */}
-          <div className="p-3.5 border-b border-border/50 space-y-3 shrink-0">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-base text-foreground flex items-center gap-2">
-                Support Chats
-                {threads.some((t) => t.unreadCount > 0) && (
-                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                )}
-              </h2>
-              <div className="flex bg-muted/60 p-0.5 rounded-lg text-xs font-medium">
-                <button
-                  onClick={() => setFilter('all')}
-                  className={`px-2.5 py-1 rounded-md transition-colors ${
-                    filter === 'all'
-                      ? 'bg-background text-foreground shadow-xs'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setFilter('unread')}
-                  className={`px-2.5 py-1 rounded-md transition-colors ${
-                    filter === 'unread'
-                      ? 'bg-background text-foreground shadow-xs'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Unread
-                </button>
-              </div>
-            </div>
-
-            {/* Search Bar */}
+          {/* Search & Filter Header */}
+          <div className="p-3 border-b border-border/40 space-y-2.5">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search customer name, email, phone..."
+                placeholder="Search customers or phone..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-muted/50 border border-border/50 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+                className="w-full h-9 pl-9 pr-3 rounded-xl bg-muted/50 border border-border/40 text-xs focus:outline-hidden focus:ring-1 focus:ring-primary"
               />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-1.5 text-xs">
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                  filter === 'all'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilter('unread')}
+                className={`px-3 py-1 rounded-full font-medium transition-colors flex items-center gap-1.5 ${
+                  filter === 'unread'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <span>Unread</span>
+                {threads.some((t) => t.unreadCount > 0) && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
+              </button>
             </div>
           </div>
 
           {/* Thread List */}
-          <div className="flex-1 overflow-y-auto divide-y divide-border/30">
+          <div className="flex-1 overflow-y-auto divide-y divide-border/20">
             {loading ? (
-              <div className="p-8 flex flex-col items-center justify-center text-muted-foreground text-xs gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                <span>Loading conversations...</span>
+              <div className="p-8 flex justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-xs">
-                {search ? 'No chats match your search.' : 'No active chats found.'}
+                No conversations found
               </div>
             ) : (
               filteredThreads.map((thread) => {
                 const isActive = thread.ticketId === activeTicketId;
-                const initials = getInitials(thread.customerName);
                 return (
                   <div
                     key={thread.ticketId}
                     onClick={() => handleSelectThread(thread)}
-                    className={`p-3.5 flex items-start gap-3 cursor-pointer transition-colors relative ${
+                    className={`p-3 flex items-start gap-3 cursor-pointer transition-colors relative ${
                       isActive ? 'bg-primary/10' : 'hover:bg-muted/40'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0 shadow-inner">
-                      {initials}
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs">
+                        {getInitials(thread.customerName)}
+                      </div>
+                      {thread.unreadCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card">
+                          {thread.unreadCount}
+                        </span>
+                      )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span
-                          className={`text-xs truncate font-semibold ${
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <p
+                          className={`text-xs truncate ${
                             thread.unreadCount > 0
-                              ? 'text-foreground font-bold'
-                              : 'text-foreground/90'
+                              ? 'font-bold text-foreground'
+                              : 'font-medium text-foreground'
                           }`}
                         >
                           {thread.customerName}
-                        </span>
+                        </p>
                         <span className="text-[10px] text-muted-foreground shrink-0">
                           {thread.lastMessageTime
-                            ? format(new Date(thread.lastMessageTime), 'HH:mm')
+                            ? format(new Date(thread.lastMessageTime), 'h:mm a')
                             : ''}
                         </span>
                       </div>
 
-                      <p
-                        className={`text-xs truncate leading-snug ${
-                          thread.unreadCount > 0
-                            ? 'text-foreground font-medium'
-                            : 'text-muted-foreground'
-                        }`}
-                      >
+                      <p className="text-[11px] text-muted-foreground truncate leading-tight">
                         {thread.lastMessage}
                       </p>
-                    </div>
 
-                    {thread.unreadCount > 0 && (
-                      <span className="shrink-0 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
-                        {thread.unreadCount}
-                      </span>
-                    )}
+                      {thread.customerPhone && (
+                        <span className="inline-block mt-1 text-[10px] text-muted-foreground/75 font-mono">
+                          {thread.customerPhone}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })
@@ -700,172 +692,212 @@ export default function AdminSupportPage() {
           </div>
         </aside>
 
-        {/* RIGHT CHAT AREA */}
+        {/* ── Right Message Pane ── */}
         <section
-          className={`flex-1 flex flex-col bg-muted/10 ${
+          className={`${
             activeTicketId ? 'flex' : 'hidden md:flex'
-          }`}
+          } flex-1 flex-col bg-background relative overflow-hidden`}
         >
           {activeThread ? (
             <>
-              {/* WhatsApp-Style Chat Header */}
-              <header className="h-14 px-4 bg-card/80 backdrop-blur-xs border-b border-border/50 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3">
+              {/* Header */}
+              <header className="h-14 shrink-0 bg-card border-b border-border/40 px-3 sm:px-4 flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <Button
                     variant="ghost"
                     size="icon"
+                    className="h-9 w-9 rounded-full md:hidden -ml-1 text-muted-foreground"
                     onClick={() => setActiveTicketId(null)}
-                    className="md:hidden h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
                   >
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft className="w-5 h-5" />
                   </Button>
 
-                  <div className="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shadow-inner">
+                  <div className="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
                     {getInitials(activeThread.customerName)}
                   </div>
 
-                  <div>
-                    <h3 className="font-semibold text-xs md:text-sm text-foreground leading-tight">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-foreground truncate leading-tight">
                       {activeThread.customerName}
-                    </h3>
-                    <p className="text-[11px] text-muted-foreground truncate max-w-xs md:max-w-md">
+                    </h2>
+                    <p className="text-[11px] text-muted-foreground truncate">
                       {activeThread.customerEmail}
-                      {activeThread.customerPhone && ` • ${activeThread.customerPhone}`}
+                      {activeThread.customerPhone ? ` • ${activeThread.customerPhone}` : ''}
                     </p>
                   </div>
                 </div>
 
+                {/* 3-Dot Dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                      className="h-9 w-9 rounded-full text-muted-foreground"
                     >
                       <MoreVertical className="w-4 h-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuContent align="end" className="w-48">
+                    {activeThread.customerId && (
+                      <>
+                        <DropdownMenuItem
+                          className="gap-2 cursor-pointer text-xs"
+                          onClick={() =>
+                            window.open(`/admin/customers/${activeThread.customerId}`, '_blank')
+                          }
+                        >
+                          <User className="w-4 h-4 text-primary" />
+                          View Customer Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
                     <DropdownMenuItem
-                      onClick={() => window.open(`/admin/customers/${activeThread.customerId}`, '_blank')}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <User className="w-4 h-4 text-primary" />
-                      <span>View Customer Profile</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive gap-2 cursor-pointer text-xs"
                       onClick={() => setDeleteDialogOpen(true)}
-                      className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
-                      <span>Delete Message</span>
+                      Delete Message
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </header>
 
               {/* Messages Container */}
-              <div
+              <main
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+                className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 overscroll-contain bg-muted/15"
               >
                 {loadingMessages ? (
-                  <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-xs gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                    <span>Loading messages...</span>
+                  <div className="h-full flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-xs text-center p-6">
-                    <LifeBuoy className="w-8 h-8 mb-2 opacity-30 text-primary" />
-                    <p className="font-semibold text-foreground text-sm">No messages to display</p>
-                    <p className="text-muted-foreground max-w-xs mt-1">
-                      Messages in this conversation are cleared or waiting for input.
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+                    <LifeBuoy className="w-10 h-10 mb-2 opacity-30 text-primary" />
+                    <p className="text-sm font-medium text-foreground">No messages in this chat</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Type below to send a reply to {activeThread.customerName}.
                     </p>
                   </div>
                 ) : (
-                  Object.entries(groupedMessages).map(([dateKey, msgs]) => (
-                    <div key={dateKey} className="space-y-3">
-                      <div className="flex justify-center my-2 sticky top-2 z-10">
-                        <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-card text-muted-foreground shadow-xs border border-border/40">
-                          {formatDateDivider(msgs[0]?.created_at || dateKey)}
+                  groupedMessages.map((group) => (
+                    <div key={group.date} className="space-y-3">
+                      <div className="flex justify-center my-2">
+                        <span className="text-[11px] font-medium bg-muted/80 backdrop-blur-xs text-muted-foreground px-2.5 py-0.5 rounded-full border border-border/30">
+                          {formatDateDivider(group.items[0]?.created_at)}
                         </span>
                       </div>
 
-                      {msgs.map((m) => {
-                        const isAdmin = m.sender_role === 'admin';
+                      {group.items.map((msg) => {
+                        const isAdmin = msg.sender_role === 'admin';
+
+                        let orderCardData: {
+                          shortId: string;
+                          network: string;
+                          volume: string;
+                          phone: string;
+                          status: string;
+                        } | null = null;
+                        let cleanText = msg.message;
+
+                        if (cleanText && cleanText.startsWith('[ORDER_REF:')) {
+                          const endIdx = cleanText.indexOf(']');
+                          if (endIdx !== -1) {
+                            const raw = cleanText.substring(11, endIdx).split('|');
+                            orderCardData = {
+                              shortId: raw[0] || '',
+                              network: raw[1] || '',
+                              volume: raw[2] || '',
+                              phone: raw[3] || '',
+                              status: raw[4] || '',
+                            };
+                            cleanText = cleanText.substring(endIdx + 1).trim();
+                          }
+                        }
+
                         return (
                           <div
-                            key={m.id}
-                            className={`flex w-full ${isAdmin ? 'justify-end' : 'justify-start'}`}
+                            key={msg.id}
+                            className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
                           >
                             <div
-                              className={`relative max-w-[85%] sm:max-w-md rounded-2xl px-3.5 py-2.5 shadow-xs text-xs md:text-sm break-words ${
+                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${
                                 isAdmin
                                   ? 'bg-primary text-primary-foreground rounded-br-xs'
-                                  : 'bg-card text-foreground border border-border/50 rounded-bl-xs'
+                                  : 'bg-card text-foreground border border-border/40 rounded-bl-xs'
                               }`}
                             >
-                              {!isAdmin && (
-                                <p className="text-[11px] font-semibold text-primary mb-1">
-                                  {activeThread.customerName}
-                                </p>
-                              )}
+                              {orderCardData && (
+                                <div
+                                  className={`mb-2 p-2 rounded-xl border text-xs ${
+                                    isAdmin
+                                      ? 'bg-black/15 border-white/20 text-white'
+                                      : 'bg-muted/70 border-border/60 text-foreground'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2 font-semibold pb-1 border-b border-current/15 mb-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <Package className="w-3.5 h-3.5" />
+                                      <span>Order: {orderCardData.shortId}</span>
+                                    </div>
+                                    <span className="uppercase text-[10px] px-1.5 py-0.5 rounded-md bg-current/15">
+                                      {orderCardData.status || 'Active'}
+                                    </span>
+                                  </div>
 
-                              {m.attachment_url && (
-                                <div className="mb-2 rounded-lg overflow-hidden">
-                                  <AttachmentRenderer url={m.attachment_url} />
+                                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] opacity-90">
+                                    {orderCardData.network && (
+                                      <span>
+                                        <strong>Network:</strong> {orderCardData.network}
+                                      </span>
+                                    )}
+                                    {orderCardData.volume && (
+                                      <span>
+                                        <strong>Bundle:</strong> {orderCardData.volume}
+                                      </span>
+                                    )}
+                                    {orderCardData.phone && (
+                                      <span className="col-span-2 font-mono">
+                                        <strong>Recipient:</strong> {orderCardData.phone}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               )}
 
-                              {(() => {
-                                const orderRefMatch = m.message.match(/^\[ORDER_REF:([^|\]]+)(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?\]\n?([\s\S]*)$/);
-                                if (!orderRefMatch) {
-                                  return (
-                                    <p className="whitespace-pre-wrap leading-relaxed select-text">
-                                      {m.message}
-                                    </p>
-                                  );
-                                }
-                                const [_, orderNo, net, vol, ph, st, userMsg] = orderRefMatch;
-                                return (
-                                  <div className="space-y-2">
-                                    <div className="rounded-xl bg-card border border-border/80 p-2.5 text-xs shadow-xs text-foreground space-y-1">
-                                      <div className="flex items-center justify-between font-semibold border-b border-border/40 pb-1">
-                                        <span className="flex items-center gap-1.5 text-primary">
-                                          <Package className="w-3.5 h-3.5" />
-                                          Order Reference: {orderNo}
-                                        </span>
-                                        {st && <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-muted font-bold text-muted-foreground">{st}</span>}
-                                      </div>
-                                      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground pt-0.5">
-                                        {net && <div>Network: <span className="font-medium text-foreground">{net}</span></div>}
-                                        {vol && <div>Bundle: <span className="font-medium text-foreground">{vol}</span></div>}
-                                        {ph && <div className="col-span-2">Phone: <span className="font-medium text-foreground">{ph}</span></div>}
-                                      </div>
-                                    </div>
-                                    {userMsg && (
-                                      <p className="whitespace-pre-wrap leading-relaxed select-text text-sm">
-                                        {userMsg}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              })()}
+                              {cleanText && <p className="whitespace-pre-wrap">{cleanText}</p>}
+
+                              {msg.attachment_url && (
+                                <div className="mt-2">
+                                  <AttachmentRenderer url={msg.attachment_url} />
+                                </div>
+                              )}
 
                               <div
-                                className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
-                                  isAdmin ? 'text-primary-foreground/75' : 'text-muted-foreground'
+                                className={`mt-1 flex items-center justify-end gap-1 text-[10px] select-none ${
+                                  isAdmin
+                                    ? 'text-primary-foreground/75'
+                                    : 'text-muted-foreground/75'
                                 }`}
                               >
-                                <span>{m.created_at ? format(new Date(m.created_at), 'HH:mm') : ''}</span>
+                                <span>
+                                  {msg.created_at
+                                    ? format(new Date(msg.created_at), 'h:mm a')
+                                    : ''}
+                                </span>
                                 {isAdmin && (
-                                  m.read_at ? (
-                                    <CheckCheck className="w-3.5 h-3.5 text-sky-200" />
-                                  ) : (
-                                    <Check className="w-3.5 h-3.5 opacity-80" />
-                                  )
+                                  <span>
+                                    {msg.id.startsWith('temp-') ? (
+                                      <span className="opacity-50">⋯</span>
+                                    ) : msg.read_at ? (
+                                      <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                                    ) : (
+                                      <Check className="w-3.5 h-3.5" />
+                                    )}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -875,106 +907,108 @@ export default function AdminSupportPage() {
                     </div>
                   ))
                 )}
-              </div>
+              </main>
 
-              {/* Admin Composer */}
-              <div className="p-2.5 bg-card border-t border-border/50 shrink-0">
+              {/* Composer */}
+              <footer className="shrink-0 bg-card border-t border-border/40 p-2 sm:p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 {attachment && (
-                  <div className="flex items-center justify-between bg-muted/60 px-3 py-1.5 rounded-xl mb-2 text-xs border border-border/40">
-                    <span className="truncate text-foreground font-medium flex items-center gap-1.5">
-                      <Paperclip className="w-3.5 h-3.5 text-primary" />
+                  <div className="mb-2 px-2 py-1 bg-muted rounded-lg flex items-center justify-between text-xs">
+                    <span className="truncate max-w-[200px] text-muted-foreground font-mono">
                       {attachment.name}
                     </span>
                     <button
-                      type="button"
                       onClick={() => setAttachment(null)}
                       className="text-muted-foreground hover:text-foreground"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 )}
 
-                <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+                <form onSubmit={handleSendMessage} className="flex items-end gap-1.5">
                   <input
-                    ref={fileInputRef}
                     type="file"
-                    accept=".png,.jpg,.jpeg,.webp,.pdf"
+                    ref={fileInputRef}
                     className="hidden"
+                    accept="image/*,.pdf,.doc,.docx"
                     onChange={(e) => {
                       if (e.target.files?.[0]) setAttachment(e.target.files[0]);
                     }}
                   />
+
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
+                    className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
                     onClick={() => fileInputRef.current?.click()}
-                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground shrink-0"
-                    title="Attach File"
                   >
-                    <Paperclip className="w-4 h-4" />
+                    <Paperclip className="w-5 h-5" />
                   </Button>
 
                   <Textarea
                     ref={textareaRef}
-                    rows={1}
                     value={replyText}
-                    onChange={handleTextareaChange}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder="Reply as Support Agent..."
-                    maxLength={2000}
-                    className="min-h-[40px] max-h-[120px] resize-none text-xs md:text-sm rounded-2xl bg-muted/50 border-border/50 focus-visible:ring-1 focus-visible:ring-primary py-2 px-3 leading-relaxed"
+                    onChange={handleTextareaInput}
+                    onKeyDown={handleKeyDown}
+                    placeholder={`Reply to ${activeThread.customerName}...`}
+                    rows={1}
+                    className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-muted/40 border-border/50 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-primary leading-relaxed"
                   />
 
                   <Button
                     type="submit"
                     disabled={(!replyText.trim() && !attachment) || sending}
-                    className="h-9 w-9 rounded-full p-0 flex items-center justify-center bg-primary text-primary-foreground shadow-xs shrink-0"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs disabled:opacity-40"
                   >
-                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5 ml-0.5" />}
+                    {sending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </Button>
                 </form>
-              </div>
-
-              {/* Delete Message Dialog */}
-              <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Message?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will clear the conversation messages from your admin view. Customer records will remain preserved.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDeleteConversation}
-                      disabled={deleting}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      {deleting ? 'Deleting...' : 'Delete Message'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              </footer>
             </>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
-              <LifeBuoy className="w-10 h-10 mb-2 opacity-30 text-primary" />
-              <p className="font-semibold text-foreground text-sm">Select a conversation</p>
-              <p className="text-xs text-muted-foreground max-w-xs mt-1">
-                Choose a customer from the left list to view and reply to their messages.
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+              <LifeBuoy className="w-12 h-12 mb-3 opacity-20 text-primary" />
+              <p className="text-sm font-semibold text-foreground">Select a conversation</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                Pick a customer thread from the left sidebar to read messages and reply.
               </p>
             </div>
           )}
         </section>
       </div>
+
+      {/* Clear Chat Confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="max-w-[340px] rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-semibold">
+              Delete Message History?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground">
+              This will clear this customer's messages from your admin view. The customer will
+              still see their own chat history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row gap-2 justify-end">
+            <AlertDialogCancel disabled={deleting} className="text-xs h-9 mt-0">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClearHistory}
+              disabled={deleting}
+              className="text-xs h-9 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }

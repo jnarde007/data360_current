@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { AttachmentRenderer } from '@/components/support/AttachmentRenderer';
+import { useToast } from '@/hooks/use-toast';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
@@ -12,11 +12,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
 import {
-  Loader2, ArrowLeft, Send, LifeBuoy, Paperclip, MoreVertical, Trash2, Check, CheckCheck, X, Package
+  Loader2, ArrowLeft, Send, LifeBuoy, MoreVertical, Trash2, Paperclip, Check, CheckCheck, X, Package
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 interface Message {
   id: string;
@@ -30,8 +30,8 @@ interface Message {
 }
 
 interface OrderContext {
-  orderId: string;
   shortId: string;
+  id: string;
   network?: string;
   volume?: string;
   phone?: string;
@@ -52,40 +52,38 @@ export default function SupportPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [loading, setLoading] = useState(true);
   const [ticketId, setTicketId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
 
-  // Referenced order banner state
-  const [orderContext, setOrderContext] = useState<OrderContext | null>(null);
-
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Context pill for reported orders (keeps composer blank)
+  const [orderContext, setOrderContext] = useState<OrderContext | null>(null);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
 
-  // Read order context from search parameters
+  // Parse order params from URL on mount
   useEffect(() => {
-    const orderShortId = searchParams.get('orderShortId') || searchParams.get('order');
-    if (orderShortId) {
+    const orderShortId = searchParams.get('orderShortId');
+    const orderId = searchParams.get('orderId');
+    if (orderShortId && orderId) {
       setOrderContext({
-        orderId: searchParams.get('orderId') || '',
         shortId: orderShortId,
-        network: searchParams.get('network') || '',
-        volume: searchParams.get('volume') || '',
-        phone: searchParams.get('phone') || '',
-        status: searchParams.get('status') || '',
+        id: orderId,
+        network: searchParams.get('network') || undefined,
+        volume: searchParams.get('volume') || undefined,
+        phone: searchParams.get('phone') || undefined,
+        status: searchParams.get('status') || undefined,
       });
       setSearchParams({}, { replace: true });
-      setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 150);
     }
   }, [searchParams, setSearchParams]);
 
@@ -105,7 +103,7 @@ export default function SupportPage() {
 
   const forceScrollToBottom = useCallback((smooth = false) => {
     scrollToBottom(smooth);
-    const raf1 = requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => {
       scrollToBottom(smooth);
       requestAnimationFrame(() => scrollToBottom(smooth));
     });
@@ -113,7 +111,7 @@ export default function SupportPage() {
     const t2 = setTimeout(() => scrollToBottom(smooth), 180);
     const t3 = setTimeout(() => scrollToBottom(smooth), 350);
     return () => {
-      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
@@ -131,9 +129,7 @@ export default function SupportPage() {
     const el = messagesContainerRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current) {
-        el.scrollTop = el.scrollHeight;
-      }
+      if (isNearBottomRef.current) el.scrollTop = el.scrollHeight;
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -145,93 +141,94 @@ export default function SupportPage() {
     }
   }, [loading, messages.length, forceScrollToBottom]);
 
+  // Load chat and mark notifications read
   const initChat = useCallback(async () => {
-    if (!user) return;
+    if (!user?.id) return;
     try {
-      const customerId = user.customer_id || user.id;
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      const { data: tickets, error } = await supabase
+      if (!customer?.id) return;
+
+      let { data: ticket } = await supabase
         .from('support_tickets')
-        .select('id, short_id, customer_cleared_at, created_at, updated_at')
-        .eq('customer_id', customerId)
-        .order('updated_at', { ascending: false })
-        .limit(1);
+        .select('id, customer_cleared_at')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (error) throw error;
-
-      let tid: string;
-      let customerClearedAt: string | null = null;
-
-      if (!tickets || tickets.length === 0) {
+      if (!ticket) {
         const { data: newTicket, error: createErr } = await supabase
           .from('support_tickets')
           .insert({
-            customer_id: customerId,
+            customer_id: customer.id,
             subject: 'Customer Support',
-            category: 'Other',
-            message: 'Support conversation started',
+            category: 'general',
             priority: 'medium',
-          } as any)
-          .select('id')
+            message: 'Support conversation started',
+          })
+          .select('id, customer_cleared_at')
           .single();
 
         if (createErr) throw createErr;
-        tid = newTicket.id;
-      } else {
-        tid = tickets[0].id;
-        customerClearedAt = (tickets[0] as any).customer_cleared_at || null;
+        ticket = newTicket;
       }
 
-      setTicketId(tid);
+      setTicketId(ticket.id);
 
       let query = supabase
         .from('support_messages')
         .select('*')
-        .eq('ticket_id', tid);
+        .eq('ticket_id', ticket.id);
 
-      if (customerClearedAt) {
-        query = query.gt('created_at', customerClearedAt);
+      if (ticket.customer_cleared_at) {
+        query = query.gt('created_at', ticket.customer_cleared_at);
       }
 
       const { data: msgs, error: msgErr } = await query.order('created_at', { ascending: true });
+      if (msgErr) throw msgErr;
 
-      if (!msgErr && msgs) {
-        setMessages(msgs as Message[]);
-        isNearBottomRef.current = true;
-      }
+      setMessages((msgs as Message[]) || []);
+      isNearBottomRef.current = true;
 
-      // Mark read in messages AND notification center
-      supabase.rpc('mark_support_messages_read', {
-        p_ticket_id: tid,
-        p_reader_role: 'customer'
-      }).catch(() => {});
-
+      // Clear customer notification bell for support messages
       supabase
         .from('notifications')
         .update({ read: true } as any)
-        .eq('target_type', 'customer')
+        .eq('user_id', user.id)
         .eq('type', 'support')
         .eq('read', false)
         .then(() => {})
         .catch(() => {});
 
+      // Mark messages read on server
+      supabase
+        .rpc('mark_support_messages_read', {
+          p_ticket_id: ticket.id,
+          p_reader_role: 'customer',
+        })
+        .catch(() => {});
     } catch (err: any) {
-      console.error('Error initializing chat:', err);
+      console.error('Error initializing support chat:', err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     initChat();
   }, [initChat]);
 
-  // Realtime subscription
+  // Realtime incoming admin replies
   useEffect(() => {
-    if (!ticketId) return;
+    if (!ticketId || !user?.id) return;
 
     const channel = supabase
-      .channel(`customer-chat-${ticketId}`)
+      .channel(`customer-chat-live-${ticketId}`)
       .on(
         'postgres_changes',
         {
@@ -256,17 +253,20 @@ export default function SupportPage() {
             return [...prev, newMsg];
           });
 
-          if (newMsg.sender_role !== 'customer') {
-            supabase.rpc('mark_support_messages_read', {
-              p_ticket_id: ticketId,
-              p_reader_role: 'customer'
-            }).catch(() => {});
+          if (newMsg.sender_role === 'admin') {
+            supabase
+              .rpc('mark_support_messages_read', {
+                p_ticket_id: ticketId,
+                p_reader_role: 'customer',
+              })
+              .catch(() => {});
 
             supabase
               .from('notifications')
               .update({ read: true } as any)
-              .eq('target_type', 'customer')
+              .eq('user_id', user.id)
               .eq('type', 'support')
+              .eq('read', false)
               .then(() => {})
               .catch(() => {});
           }
@@ -281,123 +281,124 @@ export default function SupportPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticketId, forceScrollToBottom]);
+  }, [ticketId, user?.id, forceScrollToBottom]);
 
+  // Send message
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = replyText.trim();
-    if ((!text && !attachment) || sending) return;
+    if ((!text && !attachment) || sending || !user?.id) return;
 
-    if (!ticketId || !user?.id) {
+    if (!ticketId) {
       toast({
         title: 'Connecting to chat...',
-        description: 'Please wait a moment while your chat connects.',
+        description: 'Please wait a moment while the conversation connects.',
       });
-      initChat();
+      await initChat();
       return;
     }
 
-    // Attach order reference header if reporting an order
-    let finalPayloadMessage = text;
+    // Embed order metadata if replying with an order context
+    let finalMessage = text;
     if (orderContext) {
-      const orderMeta = [
-        `[ORDER_REF:${orderContext.shortId}|${orderContext.network || ''}|${orderContext.volume || ''}|${orderContext.phone || ''}|${orderContext.status || ''}]`,
-        text
-      ].filter(Boolean).join('\n');
-      finalPayloadMessage = orderMeta;
+      const meta = [
+        orderContext.shortId,
+        orderContext.network || '',
+        orderContext.volume || '',
+        orderContext.phone || '',
+        orderContext.status || '',
+      ].join('|');
+      finalMessage = `[ORDER_REF:${meta}]\n${text}`;
     }
 
     const tempId = 'temp-' + Date.now();
     const optimisticMsg: Message = {
       id: tempId,
       ticket_id: ticketId,
-      sender_id: user.customer_id || user.id,
+      sender_id: user.id,
       sender_role: 'customer',
-      message: finalPayloadMessage || (attachment ? 'Sent an attachment' : ''),
+      message: finalMessage || (attachment ? 'Attachment sent' : ''),
       attachment_url: null,
-      created_at: new Date().toISOString(),
       read_at: null,
+      created_at: new Date().toISOString(),
     };
 
     setMessages((prev) => [...prev, optimisticMsg]);
     setReplyText('');
-    setOrderContext(null); // Clear context once sent
+    setOrderContext(null);
     const sentAttachment = attachment;
     setAttachment(null);
     if (textareaRef.current) textareaRef.current.style.height = '42px';
 
-    isNearBottomRef.current = true;
     forceScrollToBottom(true);
     setSending(true);
 
     try {
-      let uploadedUrl: string | null = null;
+      let attachmentUrl: string | null = null;
       if (sentAttachment) {
-        const ext = sentAttachment.name.split('.').pop() || 'bin';
-        const filePath = `${user.id}/${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from('support-attachments')
+        const fileExt = sentAttachment.name.split('.').pop();
+        const filePath = `support/${ticketId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('attachments')
           .upload(filePath, sentAttachment);
+        if (uploadError) throw uploadError;
 
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage
-            .from('support-attachments')
-            .getPublicUrl(filePath);
-          uploadedUrl = urlData?.publicUrl || null;
-        }
+        const { data: urlData } = supabase.storage
+          .from('attachments')
+          .getPublicUrl(filePath);
+        attachmentUrl = urlData.publicUrl;
       }
 
-      const { data: newMsg, error: insertErr } = await supabase
+      const { data: insertedMsg, error: sendErr } = await supabase
         .from('support_messages')
         .insert({
           ticket_id: ticketId,
-          sender_id: user.customer_id || user.id,
+          sender_id: user.id,
           sender_role: 'customer',
-          message: finalPayloadMessage || (uploadedUrl ? 'Sent an attachment' : ''),
-          attachment_url: uploadedUrl,
-        } as any)
+          message: finalMessage || (attachmentUrl ? 'Attachment sent' : ''),
+          attachment_url: attachmentUrl,
+        })
         .select()
         .single();
 
-      if (insertErr) throw insertErr;
+      if (sendErr) throw sendErr;
 
-      if (newMsg) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? (newMsg as Message) : m))
-        );
-      }
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? (insertedMsg as Message) : m))
+      );
     } catch (err: any) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      console.error('Send message error:', err);
       toast({
-        title: 'Failed to send message',
-        description: err.message || 'Please try again',
+        title: 'Error sending message',
+        description: err.message || 'Please try again.',
         variant: 'destructive',
       });
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setSending(false);
     }
   };
 
-  const handleDeleteConversation = async () => {
+  const handleClearHistory = async () => {
     if (!ticketId) return;
     setDeleting(true);
     try {
       const { error } = await supabase.rpc('customer_clear_chat_history', {
         p_ticket_id: ticketId,
       });
-
       if (error) throw error;
 
       setMessages([]);
-      setDeleteDialogOpen(false);
       toast({
         title: 'Chat cleared',
-        description: 'Your conversation history has been cleared.',
+        description: 'Your message history has been deleted from your view.',
       });
+      setDeleteDialogOpen(false);
     } catch (err: any) {
+      console.error('Error clearing history:', err);
       toast({
-        title: 'Error clearing chat',
-        description: err.message || 'Please try again',
+        title: 'Failed to clear chat',
+        description: err.message || 'Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -405,155 +406,178 @@ export default function SupportPage() {
     }
   };
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setReplyText(e.target.value);
-    const target = e.target;
-    target.style.height = 'auto';
-    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+    e.target.style.height = '42px';
+    const newHeight = Math.min(e.target.scrollHeight, 120);
+    e.target.style.height = `${newHeight}px`;
   };
 
   const groupedMessages = useMemo(() => {
-    return messages.reduce((acc, msg) => {
-      const dateKey = msg.created_at ? format(new Date(msg.created_at), 'yyyy-MM-dd') : 'unknown';
-      if (!acc[dateKey]) acc[dateKey] = [];
-      acc[dateKey].push(msg);
-      return acc;
-    }, {} as Record<string, Message[]>);
+    const groups: { date: string; items: Message[] }[] = [];
+    messages.forEach((msg) => {
+      const dateKey = msg.created_at ? msg.created_at.split('T')[0] : 'unknown';
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.date === dateKey) {
+        lastGroup.items.push(msg);
+      } else {
+        groups.push({ date: dateKey, items: [msg] });
+      }
+    });
+    return groups;
   }, [messages]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background text-foreground h-[100dvh] w-full overflow-hidden select-none">
-      {/* Header */}
-      <header className="h-14 md:h-16 px-3 md:px-4 bg-card/95 backdrop-blur-md border-b border-border/50 flex items-center justify-between shrink-0 shadow-xs">
-        <div className="flex items-center gap-3">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background overflow-hidden select-none">
+      {/* ── Fixed WhatsApp-Style Header ── */}
+      <header className="h-14 shrink-0 bg-card border-b border-border/40 px-3 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
           <Button
             variant="ghost"
             size="icon"
+            className="h-9 w-9 rounded-full shrink-0 -ml-1 text-muted-foreground hover:text-foreground"
             onClick={() => navigate('/dashboard')}
-            className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
-            title="Back to Dashboard"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-sm shadow-inner">
-              <LifeBuoy className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+              <LifeBuoy className="w-4 h-4" />
             </div>
-            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-card" />
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-card" />
           </div>
-
-          <div>
-            <h1 className="font-semibold text-foreground text-sm md:text-base leading-tight">DATA360 Support</h1>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Online {'•'} Instant Help</p>
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold text-foreground truncate leading-tight">
+              DATA360 Support
+            </h1>
+            <p className="text-[11px] text-emerald-500 font-medium">Online</p>
           </div>
         </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground">
               <MoreVertical className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem
+              className="text-destructive focus:text-destructive gap-2 cursor-pointer"
               onClick={() => setDeleteDialogOpen(true)}
               disabled={messages.length === 0}
-              className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
             >
               <Trash2 className="w-4 h-4" />
-              <span>Delete Message</span>
+              Delete Message
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
 
-      {/* Messages */}
+      {/* ── Scrollable Messages Area ── */}
       <main
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 py-4 md:px-6 space-y-4 bg-muted/20"
+        className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 overscroll-contain bg-muted/15"
       >
         {loading ? (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm gap-2">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <span>Loading support chat...</span>
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center p-6">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
-              <LifeBuoy className="w-6 h-6" />
-            </div>
-            <p className="font-medium text-foreground text-sm">Welcome to DATA360 Support</p>
-            <p className="text-xs text-muted-foreground max-w-xs mt-1">
-              Have an issue with your order, wallet, or account? Type your message below to chat with our team.
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+            <LifeBuoy className="w-10 h-10 mb-2 opacity-30 text-primary" />
+            <p className="text-sm font-medium text-foreground">Welcome to DATA360 Support</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+              How can we help you today? Send a message to start chatting with an agent.
             </p>
           </div>
         ) : (
-          Object.entries(groupedMessages).map(([dateKey, msgs]) => (
-            <div key={dateKey} className="space-y-3">
-              <div className="flex justify-center my-2 sticky top-2 z-10">
-                <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-card/90 text-muted-foreground shadow-xs border border-border/40">
-                  {formatDateDivider(msgs[0]?.created_at || dateKey)}
+          groupedMessages.map((group) => (
+            <div key={group.date} className="space-y-3">
+              <div className="flex justify-center my-2">
+                <span className="text-[11px] font-medium bg-muted/80 backdrop-blur-xs text-muted-foreground px-2.5 py-0.5 rounded-full border border-border/30">
+                  {formatDateDivider(group.items[0]?.created_at)}
                 </span>
               </div>
 
-              {msgs.map((m) => {
-                const isCustomer = m.sender_role === 'customer';
+              {group.items.map((msg) => {
+                const isCustomer = msg.sender_role === 'customer';
 
-                // Parse out Order Reference tag if present
-                const orderRefMatch = m.message.match(/^\[ORDER_REF:([^|\]]+)(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?(?:\|([^|\]]*))?\]\n?([\s\S]*)$/);
-                const orderShortId = orderRefMatch ? orderRefMatch[1] : null;
-                const cleanText = orderRefMatch ? orderRefMatch[6] : m.message;
+                let displayMessage = msg.message;
+                let orderTag: string | null = null;
+                if (displayMessage && displayMessage.startsWith('[ORDER_REF:')) {
+                  const endIdx = displayMessage.indexOf(']');
+                  if (endIdx !== -1) {
+                    const metaParts = displayMessage.substring(11, endIdx).split('|');
+                    orderTag = metaParts[0] || 'Order Issue';
+                    displayMessage = displayMessage.substring(endIdx + 1).trim();
+                  }
+                }
 
                 return (
                   <div
-                    key={m.id}
-                    className={`flex w-full ${isCustomer ? 'justify-end' : 'justify-start'}`}
+                    key={msg.id}
+                    className={`flex flex-col ${isCustomer ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`relative max-w-[85%] sm:max-w-md rounded-2xl px-3.5 py-2.5 shadow-xs text-sm break-words ${
+                      className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${
                         isCustomer
                           ? 'bg-primary text-primary-foreground rounded-br-xs'
-                          : 'bg-card text-foreground border border-border/50 rounded-bl-xs'
+                          : 'bg-card text-foreground border border-border/40 rounded-bl-xs'
                       }`}
                     >
-                      {!isCustomer && (
-                        <p className="text-[11px] font-semibold text-primary mb-1">
-                          Support Agent
-                        </p>
-                      )}
-
-                      {/* Customer-side Order Tag */}
-                      {orderShortId && (
-                        <div className="mb-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/15 text-[11px] font-medium">
-                          <Package className="w-3.5 h-3.5" />
-                          <span>Regarding Order: <strong>{orderShortId}</strong></span>
+                      {orderTag && (
+                        <div
+                          className={`mb-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide ${
+                            isCustomer
+                              ? 'bg-black/15 text-white/95'
+                              : 'bg-primary/10 text-primary'
+                          }`}
+                        >
+                          <Package className="w-3 h-3" />
+                          <span>Regarding Order: {orderTag}</span>
                         </div>
                       )}
 
-                      {m.attachment_url && (
-                        <div className="mb-2 rounded-lg overflow-hidden">
-                          <AttachmentRenderer url={m.attachment_url} />
-                        </div>
+                      {displayMessage && (
+                        <p className="whitespace-pre-wrap">{displayMessage}</p>
                       )}
 
-                      {cleanText && (
-                        <p className="whitespace-pre-wrap leading-relaxed select-text">{cleanText}</p>
+                      {msg.attachment_url && (
+                        <div className="mt-2">
+                          <AttachmentRenderer url={msg.attachment_url} />
+                        </div>
                       )}
 
                       <div
-                        className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
-                          isCustomer ? 'text-primary-foreground/75' : 'text-muted-foreground'
+                        className={`mt-1 flex items-center justify-end gap-1 text-[10px] select-none ${
+                          isCustomer
+                            ? 'text-primary-foreground/75'
+                            : 'text-muted-foreground/75'
                         }`}
                       >
-                        <span>{m.created_at ? format(new Date(m.created_at), 'HH:mm') : ''}</span>
+                        <span>
+                          {msg.created_at
+                            ? format(new Date(msg.created_at), 'h:mm a')
+                            : ''}
+                        </span>
                         {isCustomer && (
-                          m.read_at ? (
-                            <CheckCheck className="w-3.5 h-3.5 text-sky-200" />
-                          ) : (
-                            <Check className="w-3.5 h-3.5 opacity-80" />
-                          )
+                          <span>
+                            {msg.id.startsWith('temp-') ? (
+                              <span className="opacity-50">⋯</span>
+                            ) : msg.read_at ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -565,106 +589,116 @@ export default function SupportPage() {
         )}
       </main>
 
-      {/* Composer */}
-      <footer className="p-2 md:p-3 bg-card border-t border-border/50 shrink-0 shadow-lg pb-[max(0.6rem,env(safe-area-inset-bottom))]">
-        {/* Order Reference Pill (appears when customer taps Report) */}
-        {orderContext && (
-          <div className="flex items-center justify-between bg-primary/10 border border-primary/20 px-3 py-2 rounded-xl mb-2 text-xs max-w-4xl mx-auto text-primary">
-            <span className="flex items-center gap-2 truncate font-medium">
-              <Package className="w-4 h-4 shrink-0" />
-              <span>Replying about Order <strong>{orderContext.shortId}</strong> {orderContext.network && `(${orderContext.network} ${orderContext.volume || ''})`}</span>
+      {/* ── Dismissible Order Reference Pill ── */}
+      {orderContext && (
+        <div className="bg-primary/10 border-t border-primary/20 px-3 py-1.5 flex items-center justify-between text-xs text-primary animate-in fade-in">
+          <div className="flex items-center gap-1.5 truncate">
+            <Package className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-medium">
+              Replying about Order {orderContext.shortId}
+              {orderContext.network && orderContext.volume
+                ? ` (${orderContext.network} • ${orderContext.volume})`
+                : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => setOrderContext(null)}
+            className="p-1 hover:bg-primary/20 rounded-full transition-colors"
+            title="Dismiss order context"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Fixed Composer Area ── */}
+      <footer className="shrink-0 bg-card border-t border-border/40 p-2 sm:p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {attachment && (
+          <div className="mb-2 px-2 py-1 bg-muted rounded-lg flex items-center justify-between text-xs">
+            <span className="truncate max-w-[200px] text-muted-foreground font-mono">
+              {attachment.name}
             </span>
             <button
-              type="button"
-              onClick={() => setOrderContext(null)}
-              className="text-primary/70 hover:text-primary p-0.5 rounded-md hover:bg-primary/10"
-              title="Remove order reference"
+              onClick={() => setAttachment(null)}
+              className="text-muted-foreground hover:text-foreground"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {attachment && (
-          <div className="flex items-center justify-between bg-muted/70 px-3 py-1.5 rounded-xl mb-2 text-xs max-w-4xl mx-auto border border-border/40">
-            <span className="truncate text-foreground font-medium flex items-center gap-1.5">
-              <Paperclip className="w-3.5 h-3.5 text-primary" />
-              {attachment.name}
-            </span>
-            <button
-              type="button"
-              onClick={() => setAttachment(null)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        <form onSubmit={handleSendMessage} className="flex items-end gap-2 max-w-4xl mx-auto">
+        <form onSubmit={handleSendMessage} className="flex items-end gap-1.5">
           <input
-            ref={fileInputRef}
             type="file"
-            accept=".png,.jpg,.jpeg,.webp,.pdf"
+            ref={fileInputRef}
             className="hidden"
+            accept="image/*,.pdf,.doc,.docx"
             onChange={(e) => {
               if (e.target.files?.[0]) setAttachment(e.target.files[0]);
             }}
           />
+
           <Button
             type="button"
             variant="ghost"
             size="icon"
+            className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
             onClick={() => fileInputRef.current?.click()}
-            className="h-10 w-10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
-            title="Attach File"
           >
-            <Paperclip className="w-4 h-4" />
+            <Paperclip className="w-5 h-5" />
           </Button>
 
           <Textarea
             ref={textareaRef}
-            rows={1}
             value={replyText}
-            onChange={handleTextareaChange}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            placeholder={orderContext ? `Describe your issue with order ${orderContext.shortId}...` : "Type a message..."}
-            maxLength={2000}
-            className="min-h-[42px] max-h-[120px] resize-none text-sm rounded-2xl bg-muted/50 border-border/50 focus-visible:ring-1 focus-visible:ring-primary py-2 px-3.5 leading-relaxed"
+            onChange={handleTextareaInput}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              orderContext
+                ? `Describe your issue with ${orderContext.shortId}...`
+                : 'Type a message...'
+            }
+            rows={1}
+            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-muted/40 border-border/50 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-primary leading-relaxed"
           />
 
           <Button
             type="submit"
             disabled={(!replyText.trim() && !attachment) || sending}
-            className="h-10 w-10 rounded-full p-0 flex items-center justify-center bg-primary text-primary-foreground shadow-xs shrink-0"
+            size="icon"
+            className="h-10 w-10 shrink-0 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs disabled:opacity-40"
           >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
+            {sending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </Button>
         </form>
       </footer>
 
-      {/* Delete Confirmation Dialog */}
+      {/* ── Clear Chat Confirmation Dialog ── */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-[340px] rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Message?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will clear the conversation messages from your view. Support records will be preserved.
+            <AlertDialogTitle className="text-base font-semibold">
+              Delete Message History?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground">
+              This will clear your messages from this screen. Your account and ticket records
+              will remain intact.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="flex-row gap-2 justify-end">
+            <AlertDialogCancel disabled={deleting} className="text-xs h-9 mt-0">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteConversation}
+              onClick={handleClearHistory}
               disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="text-xs h-9 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
-              {deleting ? 'Deleting...' : 'Delete Message'}
+              {deleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
