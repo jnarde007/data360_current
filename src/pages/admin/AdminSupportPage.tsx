@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Loader2, ArrowLeft, Send, LifeBuoy, Search, MoreVertical, Trash2, Paperclip, Package, Check, CheckCheck, X, User
+  Loader2, ArrowLeft, Send, LifeBuoy, Search, MoreVertical, Trash2, Paperclip, Check, CheckCheck, X, User, Package
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
@@ -84,7 +84,7 @@ export default function AdminSupportPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
 
-  // Bulletproof direct scroll to bottom
+  // Direct scroll to bottom
   const scrollToBottom = useCallback((smooth = false) => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -125,7 +125,7 @@ export default function AdminSupportPage() {
     isNearBottomRef.current = distanceToBottom < 120;
   }, []);
 
-  // ResizeObserver: Snap to bottom the instant messages render
+  // Snap to bottom the instant messages render
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -163,7 +163,6 @@ export default function AdminSupportPage() {
 
       const customerIds = [...new Set(tickets.map((t) => t.customer_id).filter(Boolean))];
 
-      // Query customers table directly for full_name, email, phone, username
       const [{ data: customersData }, { data: allMessages }] = await Promise.all([
         supabase
           .from('customers')
@@ -248,7 +247,6 @@ export default function AdminSupportPage() {
         .select('*')
         .eq('ticket_id', ticketId);
 
-      // Only show messages after admin's cleared timestamp
       if (ticket?.admin_cleared_at) {
         query = query.gt('created_at', ticket.admin_cleared_at);
       }
@@ -262,11 +260,6 @@ export default function AdminSupportPage() {
         isNearBottomRef.current = true;
       }
 
-      // Mark read in background
-      supabase.rpc('mark_support_messages_read', {
-        p_ticket_id: ticketId,
-        p_reader_role: 'admin',
-      });
       // Mark notifications as read for this ticket
       supabase
         .from('notifications')
@@ -276,12 +269,19 @@ export default function AdminSupportPage() {
         .eq('read', false)
         .then(() => {})
         .catch(() => {});
-      // dummy: ({
-      }).then(() => {
-        setThreads((prev) =>
-          prev.map((t) => (t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t))
-        );
-      }).catch(() => {});
+
+      // Mark read in background
+      supabase
+        .rpc('mark_support_messages_read', {
+          p_ticket_id: ticketId,
+          p_reader_role: 'admin',
+        })
+        .then(() => {
+          setThreads((prev) =>
+            prev.map((t) => (t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t))
+          );
+        })
+        .catch(() => {});
     } catch (err: any) {
       console.error('Error fetching messages:', err);
     } finally {
@@ -300,7 +300,7 @@ export default function AdminSupportPage() {
     }
   }, [activeTicketId, fetchMessages]);
 
-  // LIVE REALTIME WEBSOCKET: Active conversation instant streaming (<100ms)
+  // LIVE REALTIME WEBSOCKET: Active conversation streaming (<100ms)
   useEffect(() => {
     if (!activeTicketId) return;
 
@@ -331,10 +331,22 @@ export default function AdminSupportPage() {
           });
 
           if (newMsg.sender_role === 'customer') {
-            supabase.rpc('mark_support_messages_read', {
-              p_ticket_id: activeTicketId,
-              p_reader_role: 'admin',
-            }).catch(() => {});
+            supabase
+              .rpc('mark_support_messages_read', {
+                p_ticket_id: activeTicketId,
+                p_reader_role: 'admin',
+              })
+              .catch(() => {});
+
+            // Clear admin notifications on incoming message to active ticket
+            supabase
+              .from('notifications')
+              .update({ read: true } as any)
+              .eq('target_type', 'admin')
+              .eq('type', 'support')
+              .eq('read', false)
+              .then(() => {})
+              .catch(() => {});
           }
 
           // Bump active thread to top immediately
@@ -427,7 +439,6 @@ export default function AdminSupportPage() {
       created_at: new Date().toISOString(),
     };
 
-    // 1. Immediately show in chat
     setMessages((prev) => [...prev, optimisticMsg]);
     setReplyText('');
     const sentAttachment = attachment;
@@ -438,7 +449,6 @@ export default function AdminSupportPage() {
     forceScrollToBottom(true);
     setSending(true);
 
-    // Bump this thread immediately to the top of the sidebar
     setThreads((prev) => {
       const current = prev.find((t) => t.ticketId === activeTicketId);
       if (!current) return prev;
@@ -735,14 +745,10 @@ export default function AdminSupportPage() {
                       <MoreVertical className="w-4 h-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuItem
-                      onClick={() => {
-                        if (activeThread?.customerId) {
-                          window.open(`/admin/customers/${activeThread.customerId}`, '_blank');
-                        }
-                      }}
-                      className="flex items-center gap-2 cursor-pointer font-medium"
+                      onClick={() => window.open(`/admin/customers/${activeThread.customerId}`, '_blank')}
+                      className="flex items-center gap-2 cursor-pointer"
                     >
                       <User className="w-4 h-4 text-primary" />
                       <span>View Customer Profile</span>
