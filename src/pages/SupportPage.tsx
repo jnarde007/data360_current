@@ -197,11 +197,16 @@ export default function SupportPage() {
     }
   }, [activeTicketId, fetchMessages]);
 
-  useRealtimeRefresh(() => {
-    if (activeTicketId) {
-      fetchMessages(activeTicketId, true);
-    }
-  }, 'support_messages');
+  useRealtimeRefresh(
+    ['support_messages', 'support_tickets'],
+    () => {
+      if (activeTicketId) {
+        fetchMessages(activeTicketId, true);
+      }
+      fetchThreads();
+    },
+    'customer-support-live'
+  );
 
   const handleSelectThread = (threadId: string) => {
     setActiveTicketId(threadId);

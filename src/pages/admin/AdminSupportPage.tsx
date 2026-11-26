@@ -199,11 +199,16 @@ export default function AdminSupportPage() {
     }
   }, [activeTicketId, fetchMessages]);
 
-  useRealtimeRefresh(() => {
-    if (activeTicketId) {
-      fetchMessages(activeTicketId, true);
-    }
-  }, 'support_messages');
+  useRealtimeRefresh(
+    ['support_messages', 'support_tickets'],
+    () => {
+      if (activeTicketId) {
+        fetchMessages(activeTicketId, true);
+      }
+      fetchThreads();
+    },
+    'admin-support-live'
+  );
 
   const handleSelectThread = (ticketId: string) => {
     setActiveTicketId(ticketId);
