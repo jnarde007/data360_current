@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { CustomerLayout } from '@/components/CustomerLayout';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/table';
 import { ShoppingCart, Search, Loader2, Wallet2, LifeBuoy } from 'lucide-react';
 import { DetailViewDialog } from '@/components/DetailViewDialog';
-import { CreateTicketDialog } from '@/components/support/CreateTicketDialog';
+import { ReportOrderDialog } from '@/components/support/ReportOrderDialog';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DateFilter, filterByDate, type DatePreset } from '@/components/DateFilter';
@@ -79,7 +79,7 @@ export default function OrdersPage() {
       const rows = ((data || []) as unknown) as OrderRow[];
       setOrders(rows);
 
-      // Refund evidence — a "failed" order is only "Refunded" when the refund
+      // Refund evidence â€” a "failed" order is only "Refunded" when the refund
       // ledger (or a legacy wallet credit) actually confirms the money returned.
       const [{ data: refunds }, { data: credits }] = await Promise.all([
         supabase.from('refunds')
@@ -265,10 +265,10 @@ export default function OrdersPage() {
                             : <ShoppingCart className="w-4 h-4 text-muted-foreground" />}
                         </div>
                         <div className="min-w-0 flex-1 space-y-0.5">
-                          <p className="text-sm font-semibold text-foreground truncate">{o.network} · {o.bundle_size}</p>
+                          <p className="text-sm font-semibold text-foreground truncate">{o.network} Â· {o.bundle_size}</p>
                           <p className="text-xs font-mono tracking-wide text-muted-foreground">{formatPhoneSpaced(o.recipient_phone)}</p>
                           <p className="text-[10px] text-muted-foreground/70">
-                            {o.short_id} · {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {new Date(o.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                            {o.short_id} Â· {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} Â· {new Date(o.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
                         <div className="text-right shrink-0 space-y-1 flex flex-col items-end">
@@ -371,7 +371,7 @@ export default function OrdersPage() {
             status: <StatusBadge status={statusViewFor(detailOrder).badgeStatus} />,
           } : undefined}
           fields={detailOrder ? [
-            { label: 'Date', value: new Date(detailOrder.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' • ' + new Date(detailOrder.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) },
+            { label: 'Date', value: new Date(detailOrder.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' â€¢ ' + new Date(detailOrder.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) },
             { label: 'Bundle', value: detailOrder.bundle_size },
             ...(detailOrder.quantity > 1 ? [{ label: 'Quantity', value: String(detailOrder.quantity) }] : []),
             { label: 'Recipient', value: <span className="font-mono tracking-wide">{formatPhoneSpaced(detailOrder.recipient_phone)}</span> },
@@ -424,3 +424,4 @@ export default function OrdersPage() {
     </CustomerLayout>
   );
 }
+
