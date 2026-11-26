@@ -49,6 +49,15 @@ function formatDateDivider(dateStr: string) {
   return format(d, 'EEEE, MMM d, yyyy');
 }
 
+function getInitials(name: string): string {
+  if (!name || name === 'Customer') return 'CU';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
 export default function AdminSupportPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -137,7 +146,7 @@ export default function AdminSupportPage() {
     }
   }, [activeTicketId, loadingMessages, messages.length, forceScrollToBottom]);
 
-  // Fetch threads strictly ordered by latest message descending
+  // Fetch threads with real customer names from customers table
   const fetchThreads = useCallback(async () => {
     try {
       const { data: tickets, error } = await supabase
@@ -154,10 +163,11 @@ export default function AdminSupportPage() {
 
       const customerIds = [...new Set(tickets.map((t) => t.customer_id).filter(Boolean))];
 
-      const [{ data: profiles }, { data: allMessages }] = await Promise.all([
+      // Query customers table directly for full_name, email, phone, username
+      const [{ data: customersData }, { data: allMessages }] = await Promise.all([
         supabase
-          .from('profiles')
-          .select('id, full_name, email, phone')
+          .from('customers')
+          .select('id, full_name, email, phone, username')
           .in('id', customerIds),
         supabase
           .from('support_messages')
@@ -166,7 +176,7 @@ export default function AdminSupportPage() {
           .order('created_at', { ascending: false }),
       ]);
 
-      const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+      const customerMap = new Map((customersData || []).map((c) => [c.id, c]));
       const ticketMessagesMap = new Map<string, any[]>();
       (allMessages || []).forEach((m) => {
         const list = ticketMessagesMap.get(m.ticket_id) || [];
@@ -177,13 +187,13 @@ export default function AdminSupportPage() {
       const threadList: CustomerThread[] = [];
 
       tickets.forEach((ticket) => {
-        const profile = profileMap.get(ticket.customer_id);
+        const cust = customerMap.get(ticket.customer_id);
         const ticketMsgs = ticketMessagesMap.get(ticket.id) || [];
 
         const clearedAt = ticket.admin_cleared_at ? new Date(ticket.admin_cleared_at).getTime() : 0;
         const validMsgs = ticketMsgs.filter((m) => new Date(m.created_at).getTime() > clearedAt);
 
-        // Exclude empty tickets
+        // Exclude completely empty tickets
         if (validMsgs.length === 0 && !ticket.message) return;
 
         const latestMsg = validMsgs[0];
@@ -191,12 +201,16 @@ export default function AdminSupportPage() {
           (m) => m.sender_role === 'customer' && !m.read_at
         ).length;
 
+        const resolvedName = cust?.full_name?.trim() || cust?.username || cust?.email?.split('@')[0] || 'Customer';
+        const resolvedEmail = cust?.email || 'No email';
+        const resolvedPhone = cust?.phone || undefined;
+
         threadList.push({
           ticketId: ticket.id,
           customerId: ticket.customer_id,
-          customerName: profile?.full_name || 'Customer',
-          customerEmail: profile?.email || 'No email',
-          customerPhone: profile?.phone || undefined,
+          customerName: resolvedName,
+          customerEmail: resolvedEmail,
+          customerPhone: resolvedPhone,
           lastMessage: latestMsg?.message || ticket.message || 'Support inquiry',
           lastMessageTime: latestMsg?.created_at || ticket.updated_at || ticket.created_at,
           unreadCount,
@@ -350,7 +364,7 @@ export default function AdminSupportPage() {
         },
         (payload) => {
           const newMsg = payload.new as Message;
-          if (newMsg.ticket_id === activeTicketId) return; // Handled by active ticket listener
+          if (newMsg.ticket_id === activeTicketId) return;
 
           setThreads((prev) => {
             const existing = prev.find((t) => t.ticketId === newMsg.ticket_id);
@@ -487,7 +501,6 @@ export default function AdminSupportPage() {
       setMessages([]);
       setDeleteDialogOpen(false);
 
-      // Refresh sidebar list
       setThreads((prev) =>
         prev.map((t) =>
           t.ticketId === activeTicketId
@@ -598,7 +611,7 @@ export default function AdminSupportPage() {
             </div>
           </div>
 
-          {/* Thread List: Most recent ALWAYS at the top */}
+          {/* Thread List */}
           <div className="flex-1 overflow-y-auto divide-y divide-border/30">
             {loading ? (
               <div className="p-8 flex flex-col items-center justify-center text-muted-foreground text-xs gap-2">
@@ -612,6 +625,7 @@ export default function AdminSupportPage() {
             ) : (
               filteredThreads.map((thread) => {
                 const isActive = thread.ticketId === activeTicketId;
+                const initials = getInitials(thread.customerName);
                 return (
                   <div
                     key={thread.ticketId}
@@ -621,7 +635,7 @@ export default function AdminSupportPage() {
                     }`}
                   >
                     <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0 shadow-inner">
-                      {thread.customerName.slice(0, 2).toUpperCase()}
+                      {initials}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -686,7 +700,7 @@ export default function AdminSupportPage() {
                   </Button>
 
                   <div className="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shadow-inner">
-                    <User className="w-4 h-4" />
+                    {getInitials(activeThread.customerName)}
                   </div>
 
                   <div>
@@ -722,7 +736,7 @@ export default function AdminSupportPage() {
                 </DropdownMenu>
               </header>
 
-              {/* Messages Container with ResizeObserver & Scroll Lock */}
+              {/* Messages Container */}
               <div
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
