@@ -199,16 +199,12 @@ export default function OrdersPage() {
         message: fullMessage,
       });
 
-      if (msgErr) throw msgErr;
-
-      toast({
-        title: 'Report Sent to Support',
-        description: `Your issue regarding order ${reportIssueOrder.short_id} has been submitted. Our team will reply shortly in chat.`,
-      });
+            if (msgErr) throw msgErr;
 
       setReportText('');
       setReportIssueOrder(null);
       navigate('/support');
+
     } catch (err: any) {
       console.error('Failed to submit order report:', err);
       toast({
