@@ -414,7 +414,7 @@ export default function SupportPage() {
 
           <div className="min-w-0">
             <h1 className="text-sm font-semibold text-slate-100 truncate flex items-center gap-2">
-              DATA360 Support
+              <span className="font-bold !text-blue-600">DATA360 Support</span>
             </h1>
             <p className="text-[11px] text-emerald-400 font-medium leading-none">
               Online
@@ -464,7 +464,7 @@ export default function SupportPage() {
             <div className="w-12 h-12 rounded-full bg-[#111b21] flex items-center justify-center mb-3 text-slate-500">
               <LifeBuoy className="w-6 h-6" />
             </div>
-            <p className="text-sm font-semibold text-slate-300">Welcome to DATA360 Support</p>
+            <p className="text-sm font-semibold text-slate-300">Welcome to <span className="font-bold !text-blue-600">DATA360 Support</span></p>
             <p className="text-xs text-slate-500 mt-1 max-w-xs">
               How can we help you today? Send a message to start chatting with an agent.
             </p>
@@ -498,7 +498,7 @@ export default function SupportPage() {
                       {orderMeta && (
                         <div className="mb-1.5 p-2 rounded-xl bg-black/25 border border-white/10 text-[11px] space-y-0.5">
                           <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
-                            <Package className="w-3.5 h-3.5" />
+                            <Package className="w-3.5 h-3.5 !text-blue-600 shrink-0" />
                             <span>Order: {orderMeta[0]}</span>
                             {orderMeta[1] && <span>• {orderMeta[1]} {orderMeta[2]}</span>}
                           </div>

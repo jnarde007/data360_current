@@ -834,7 +834,7 @@ export default function AdminSupportPage() {
                                 >
                                   <div className="flex items-center justify-between gap-2 font-semibold pb-1 border-b border-current/15 mb-1.5">
                                     <div className="flex items-center gap-1.5">
-                                      <Package className="w-3.5 h-3.5" />
+                                      <Package className="w-3.5 h-3.5 !text-blue-600 shrink-0" />
                                       <span>Order: {orderCardData.shortId}</span>
                                     </div>
                                     <span className="uppercase text-[10px] px-1.5 py-0.5 rounded-md bg-current/15">
@@ -845,17 +845,17 @@ export default function AdminSupportPage() {
                                   <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] opacity-90">
                                     {orderCardData.network && (
                                       <span>
-                                        <strong>Network:</strong> {orderCardData.network}
+                                        <strong className="!text-blue-600 font-bold">Network:</strong> {orderCardData.network}
                                       </span>
                                     )}
                                     {orderCardData.volume && (
                                       <span>
-                                        <strong>Bundle:</strong> {orderCardData.volume}
+                                        <strong className="!text-blue-600 font-bold">Bundle:</strong> {orderCardData.volume}
                                       </span>
                                     )}
                                     {orderCardData.phone && (
                                       <span className="col-span-2 font-mono">
-                                        <strong>Recipient:</strong> {orderCardData.phone}
+                                        <strong className="!text-blue-600 font-bold">Recipient:</strong> {orderCardData.phone}
                                       </span>
                                     )}
                                   </div>
