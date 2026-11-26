@@ -8,27 +8,32 @@ import { formatGHS } from '@/lib/mock-data';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
+} from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { ShoppingCart, Search, Loader2, Wallet2, LifeBuoy } from 'lucide-react';
+import { ShoppingCart, Search, Loader2, Wallet2, LifeBuoy, Send, CheckCircle, Clock, AlertTriangle, BarChart3 } from 'lucide-react';
 import { DetailViewDialog } from '@/components/DetailViewDialog';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DateFilter, filterByDate, type DatePreset } from '@/components/DateFilter';
 import { Pagination } from '@/components/Pagination';
+import { MobileCard } from '@/components/MobileCard';
 import { getNetworkAccent, getNetworkStripe, formatPhoneSpaced } from '@/lib/network-colors';
 import mtnLogo from '@/assets/mtn-logo.png';
 import atLogo from '@/assets/at-logo.png';
 import telecelLogo from '@/assets/telecel-logo.png';
+import { useToast } from '@/hooks/use-toast';
 
 const networkLogos: Record<string, string> = { MTN: mtnLogo, AirtelTigo: atLogo, Telecel: telecelLogo };
 import { useIsMobile } from '@/hooks/use-mobile';
 import { countOperationalOrders, countDeliveredOrders, totalSpent as calcTotalSpent, isFailed } from '@/lib/order-metrics';
-import { CheckCircle, Clock, AlertTriangle, BarChart3 } from 'lucide-react';
 import { buildRefundEvidence, deriveCustomerStatus, EMPTY_REFUND_EVIDENCE, type RefundEvidence } from '@/lib/order-resolution';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } };
@@ -43,6 +48,7 @@ interface OrderRow {
 
 export default function OrdersPage() {
   const { user, refreshUser } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
@@ -57,24 +63,15 @@ export default function OrdersPage() {
   const [customDate, setCustomDate] = useState<Date>();
   const [detailOrder, setDetailOrder] = useState<OrderRow | null>(null);
   const [refundEvidence, setRefundEvidence] = useState<Record<string, RefundEvidence>>({});
+  const [reportIssueOrder, setReportIssueOrder] = useState<OrderRow | null>(null);
+  const [reportText, setReportText] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
   const deepLinkedRef = useRef(false);
-
-  // Directly navigate to live chat with order context
-  const handleReportOrder = (o: OrderRow) => {
-    navigate(
-      `/support?orderShortId=${encodeURIComponent(o.short_id)}&orderId=${encodeURIComponent(o.id)}&network=${encodeURIComponent(o.network)}&volume=${encodeURIComponent(o.bundle_size)}&phone=${encodeURIComponent(o.recipient_phone)}&status=${encodeURIComponent(o.status)}`
-    );
-  };
 
   const loadOrders = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, short_id, network, bundle_size, recipient_phone, quantity, total_amount, status, created_at, grace_period_ends_at, delivery_mode, provider_name, provider_order_id, provider_reference, buyer_type, buyer_phone, buyer_email, payment_method, payment_reference, customer_id, affiliate_code, tracking_token, payment_verified_at, linked_customer_id')
-        .eq('customer_id', user.id)
-        .order('created_at', { ascending: false });
-
+      const { data, error } = await supabase.from('orders').select('id, short_id, network, bundle_size, recipient_phone, quantity, total_amount, status, created_at, grace_period_ends_at, delivery_mode, provider_name, provider_order_id, provider_reference, buyer_type, buyer_phone, buyer_email, payment_method, payment_reference, customer_id, affiliate_code, tracking_token, payment_verified_at, linked_customer_id').eq('customer_id', user.id).order('created_at', { ascending: false });
       if (error) throw error;
       const rows = ((data || []) as unknown) as OrderRow[];
       setOrders(rows);
@@ -144,6 +141,84 @@ export default function OrdersPage() {
   };
 
   const handleCancelled = async () => { await refreshUser(); await loadOrders(); };
+
+  // Handle Order Report directly from popup modal card
+  const handleSendOrderReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportIssueOrder || !reportText.trim() || !user?.id || submittingReport) return;
+
+    setSubmittingReport(true);
+    try {
+      const { data: customer, error: custErr } = await supabase
+        .from('customers')
+        .select('id')
+        .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+
+      if (custErr || !customer?.id) throw new Error('Customer account not found.');
+
+      let { data: ticket } = await supabase
+        .from('support_tickets')
+        .select('id')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!ticket) {
+        const { data: newTicket, error: createErr } = await supabase
+          .from('support_tickets')
+          .insert({
+            customer_id: customer.id,
+            subject: 'Customer Support',
+            category: 'general',
+            priority: 'medium',
+            message: `Report for order ${reportIssueOrder.short_id}`,
+          })
+          .select('id')
+          .single();
+
+        if (createErr) throw createErr;
+        ticket = newTicket;
+      }
+
+      const meta = [
+        reportIssueOrder.short_id,
+        reportIssueOrder.network || '',
+        reportIssueOrder.bundle_size || '',
+        reportIssueOrder.recipient_phone || '',
+        reportIssueOrder.status || '',
+      ].join('|');
+
+      const fullMessage = `[ORDER_REF:${meta}]\n${reportText.trim()}`;
+
+      const { error: msgErr } = await supabase.from('support_messages').insert({
+        ticket_id: ticket.id,
+        sender_id: user.id,
+        sender_role: 'customer',
+        message: fullMessage,
+      });
+
+      if (msgErr) throw msgErr;
+
+      toast({
+        title: 'Report Sent to Support',
+        description: `Your issue regarding order ${reportIssueOrder.short_id} has been submitted. Our team will reply shortly in chat.`,
+      });
+
+      setReportText('');
+      setReportIssueOrder(null);
+    } catch (err: any) {
+      console.error('Failed to submit order report:', err);
+      toast({
+        title: 'Failed to send report',
+        description: err.message || 'Please try again or contact support directly.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
 
   if (loading) {
     return <CustomerLayout><div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div></CustomerLayout>;
@@ -271,7 +346,7 @@ export default function OrdersPage() {
                         <div className="text-right shrink-0 space-y-1 flex flex-col items-end">
                           <p className="text-sm font-display font-bold text-foreground tabular-nums">{formatGHS(Number(o.total_amount))}</p>
                           <StatusBadge status={statusViewFor(o).badgeStatus} />
-                          <button type="button" aria-label="Report an issue" className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={e => { e.stopPropagation(); handleReportOrder(o); }}>
+                          <button type="button" aria-label="Report an issue" className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={e => { e.stopPropagation(); setReportIssueOrder(o); }}>
                             <LifeBuoy className="w-3 h-3" /> Report
                           </button>
                         </div>
@@ -334,7 +409,7 @@ export default function OrdersPage() {
                                 {o.status === 'pending_confirmation' && o.grace_period_ends_at ? (
                                   <OrderCountdown orderId={o.id} customerId={user!.id} gracePeriodEndsAt={o.grace_period_ends_at} shortId={o.short_id} onCancelled={handleCancelled} allowProceedNow onProceeded={handleCancelled} />
                                 ) : (
-                                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={() => handleReportOrder(o)}>
+                                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={() => setReportIssueOrder(o)}>
                                     <LifeBuoy className="w-3.5 h-3.5" />
                                     Report
                                   </Button>
@@ -353,6 +428,7 @@ export default function OrdersPage() {
             </section>
           </>
         )}
+
         {/* Detail Dialog */}
         <DetailViewDialog
           open={!!detailOrder}
@@ -400,10 +476,79 @@ export default function OrdersPage() {
             const o = detailOrder;
             if (o) {
               setDetailOrder(null);
-              handleReportOrder(o);
+              setReportIssueOrder(o);
             }
           }}
         />
+
+        {/* Compact Order Report Modal Card */}
+        <Dialog open={!!reportIssueOrder} onOpenChange={(open) => { if (!open) { setReportIssueOrder(null); setReportText(''); } }}>
+          <DialogContent className="max-w-[420px] rounded-2xl p-5 sm:p-6">
+            <DialogHeader className="text-left space-y-1">
+              <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
+                <LifeBuoy className="w-5 h-5 text-primary" />
+                Report Order {reportIssueOrder?.short_id}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Describe the issue you experienced. Our support team will review and reply in chat.
+              </DialogDescription>
+            </DialogHeader>
+
+            {reportIssueOrder && (
+              <div className="my-2 p-3 rounded-xl bg-muted/50 border border-border/40 text-xs space-y-1.5">
+                <div className="flex items-center justify-between font-medium">
+                  <span className="text-foreground font-semibold">
+                    {reportIssueOrder.network} • {reportIssueOrder.bundle_size}
+                  </span>
+                  <span className="capitalize px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary">
+                    {reportIssueOrder.status}
+                  </span>
+                </div>
+                <div className="text-muted-foreground flex items-center justify-between">
+                  <span>Recipient: {reportIssueOrder.recipient_phone}</span>
+                  <span>Order: {reportIssueOrder.short_id}</span>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSendOrderReport} className="space-y-4">
+              <Textarea
+                value={reportText}
+                onChange={(e) => setReportText(e.target.value)}
+                placeholder="What seems to be the problem with this order? (e.g. data hasn't arrived, wrong number, etc.)"
+                rows={4}
+                required
+                className="resize-none text-xs sm:text-[13px] rounded-xl bg-muted/30 focus-visible:ring-1 focus-visible:ring-primary"
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={submittingReport}
+                  onClick={() => { setReportIssueOrder(null); setReportText(''); }}
+                  className="text-xs h-9"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!reportText.trim() || submittingReport}
+                  className="text-xs h-9 gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  {submittingReport ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  Send Report
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </CustomerLayout>
   );

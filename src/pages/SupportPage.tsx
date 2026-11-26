@@ -16,7 +16,7 @@ import {
   Loader2, ArrowLeft, Send, LifeBuoy, MoreVertical, Trash2, Paperclip, Check, CheckCheck, X, Package
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 interface Message {
   id: string;
@@ -27,15 +27,6 @@ interface Message {
   attachment_url: string | null;
   created_at: string;
   read_at: string | null;
-}
-
-interface OrderContext {
-  shortId: string;
-  id: string;
-  network?: string;
-  volume?: string;
-  phone?: string;
-  status?: string;
 }
 
 function formatDateDivider(dateStr: string) {
@@ -50,7 +41,6 @@ export default function SupportPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
 
   const [ticketId, setTicketId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -62,30 +52,10 @@ export default function SupportPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Context pill for reported orders (keeps composer blank)
-  const [orderContext, setOrderContext] = useState<OrderContext | null>(null);
-
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
-
-  // Parse order params from URL on mount
-  useEffect(() => {
-    const orderShortId = searchParams.get('orderShortId');
-    const orderId = searchParams.get('orderId');
-    if (orderShortId && orderId) {
-      setOrderContext({
-        shortId: orderShortId,
-        id: orderId,
-        network: searchParams.get('network') || undefined,
-        volume: searchParams.get('volume') || undefined,
-        phone: searchParams.get('phone') || undefined,
-        status: searchParams.get('status') || undefined,
-      });
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = messagesContainerRef.current;
@@ -141,16 +111,17 @@ export default function SupportPage() {
     }
   }, [loading, messages.length, forceScrollToBottom]);
 
-  // Load chat and mark notifications read
+  // Load chat and mark notifications read (Fixed auth_user_id query)
   const initChat = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const { data: customer } = await supabase
+      const { data: customer, error: custErr } = await supabase
         .from('customers')
         .select('id')
-        .eq('user_id', user.id)
+        .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
 
+      if (custErr) throw custErr;
       if (!customer?.id) return;
 
       let { data: ticket } = await supabase
@@ -223,9 +194,9 @@ export default function SupportPage() {
     initChat();
   }, [initChat]);
 
-  // Realtime incoming admin replies
+  // LIVE REALTIME WEBSOCKET
   useEffect(() => {
-    if (!ticketId || !user?.id) return;
+    if (!ticketId) return;
 
     const channel = supabase
       .channel(`customer-chat-live-${ticketId}`)
@@ -264,7 +235,7 @@ export default function SupportPage() {
             supabase
               .from('notifications')
               .update({ read: true } as any)
-              .eq('user_id', user.id)
+              .eq('user_id', user?.id)
               .eq('type', 'support')
               .eq('read', false)
               .then(() => {})
@@ -298,26 +269,13 @@ export default function SupportPage() {
       return;
     }
 
-    // Embed order metadata if replying with an order context
-    let finalMessage = text;
-    if (orderContext) {
-      const meta = [
-        orderContext.shortId,
-        orderContext.network || '',
-        orderContext.volume || '',
-        orderContext.phone || '',
-        orderContext.status || '',
-      ].join('|');
-      finalMessage = `[ORDER_REF:${meta}]\n${text}`;
-    }
-
     const tempId = 'temp-' + Date.now();
     const optimisticMsg: Message = {
       id: tempId,
       ticket_id: ticketId,
       sender_id: user.id,
       sender_role: 'customer',
-      message: finalMessage || (attachment ? 'Attachment sent' : ''),
+      message: text || (attachment ? 'Attachment sent' : ''),
       attachment_url: null,
       read_at: null,
       created_at: new Date().toISOString(),
@@ -325,7 +283,6 @@ export default function SupportPage() {
 
     setMessages((prev) => [...prev, optimisticMsg]);
     setReplyText('');
-    setOrderContext(null);
     const sentAttachment = attachment;
     setAttachment(null);
     if (textareaRef.current) textareaRef.current.style.height = '42px';
@@ -355,7 +312,7 @@ export default function SupportPage() {
           ticket_id: ticketId,
           sender_id: user.id,
           sender_role: 'customer',
-          message: finalMessage || (attachmentUrl ? 'Attachment sent' : ''),
+          message: text || (attachmentUrl ? 'Attachment sent' : ''),
           attachment_url: attachmentUrl,
         })
         .select()
@@ -389,21 +346,28 @@ export default function SupportPage() {
       if (error) throw error;
 
       setMessages([]);
+      setDeleteDialogOpen(false);
       toast({
         title: 'Chat cleared',
-        description: 'Your message history has been deleted from your view.',
+        description: 'Your message history has been cleared.',
       });
-      setDeleteDialogOpen(false);
     } catch (err: any) {
-      console.error('Error clearing history:', err);
+      console.error('Failed to clear chat:', err);
       toast({
-        title: 'Failed to clear chat',
+        title: 'Error clearing chat',
         description: err.message || 'Please try again.',
         variant: 'destructive',
       });
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setReplyText(e.target.value);
+    const target = e.target;
+    target.style.height = 'auto';
+    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -413,167 +377,163 @@ export default function SupportPage() {
     }
   };
 
-  const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setReplyText(e.target.value);
-    e.target.style.height = '42px';
-    const newHeight = Math.min(e.target.scrollHeight, 120);
-    e.target.style.height = `${newHeight}px`;
-  };
-
   const groupedMessages = useMemo(() => {
-    const groups: { date: string; items: Message[] }[] = [];
+    const groups: { dateLabel: string; items: Message[] }[] = [];
     messages.forEach((msg) => {
-      const dateKey = msg.created_at ? msg.created_at.split('T')[0] : 'unknown';
+      const label = formatDateDivider(msg.created_at);
       const lastGroup = groups[groups.length - 1];
-      if (lastGroup && lastGroup.date === dateKey) {
+      if (lastGroup && lastGroup.dateLabel === label) {
         lastGroup.items.push(msg);
       } else {
-        groups.push({ date: dateKey, items: [msg] });
+        groups.push({ dateLabel: label, items: [msg] });
       }
     });
     return groups;
   }, [messages]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background overflow-hidden select-none">
-      {/* ── Fixed WhatsApp-Style Header ── */}
-      <header className="h-14 shrink-0 bg-card border-b border-border/40 px-3 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-2.5 min-w-0">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0b141a] text-slate-100 overflow-hidden font-sans select-none">
+      {/* WhatsApp Header */}
+      <header className="h-14 shrink-0 bg-[#202c33] border-b border-[#222d34] px-3 sm:px-4 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-full shrink-0 -ml-1 text-muted-foreground hover:text-foreground"
             onClick={() => navigate('/dashboard')}
+            className="h-9 w-9 text-slate-300 hover:text-white hover:bg-white/10 rounded-full shrink-0 -ml-1"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="relative">
-            <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-              <LifeBuoy className="w-4 h-4" />
+
+          <div className="relative shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary font-bold text-xs sm:text-sm shadow-xs">
+              <LifeBuoy className="w-5 h-5" />
             </div>
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-card" />
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#202c33]" />
           </div>
+
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-foreground truncate leading-tight">
+            <h1 className="text-sm font-semibold text-slate-100 truncate flex items-center gap-2">
               DATA360 Support
             </h1>
-            <p className="text-[11px] text-emerald-500 font-medium">Online</p>
+            <p className="text-[11px] text-emerald-400 font-medium leading-none">
+              Online
+            </p>
           </div>
         </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-slate-300 hover:text-white hover:bg-white/10 rounded-full"
+            >
               <MoreVertical className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="end" className="w-44 bg-[#233138] border-[#2f3b43] text-slate-200">
             <DropdownMenuItem
-              className="text-destructive focus:text-destructive gap-2 cursor-pointer"
               onClick={() => setDeleteDialogOpen(true)}
-              disabled={messages.length === 0}
+              className="text-rose-400 focus:text-rose-300 focus:bg-rose-500/10 cursor-pointer text-xs gap-2"
             >
               <Trash2 className="w-4 h-4" />
-              Delete Message
+              Delete Messages
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
 
-      {/* ── Scrollable Messages Area ── */}
+      {/* Messages Scroll Area */}
       <main
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 overscroll-contain bg-muted/15"
+        className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-3 bg-[#0b141a] overscroll-contain"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.02) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
       >
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
-            <LifeBuoy className="w-10 h-10 mb-2 opacity-30 text-primary" />
-            <p className="text-sm font-medium text-foreground">Welcome to DATA360 Support</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+            <div className="w-12 h-12 rounded-full bg-[#111b21] flex items-center justify-center mb-3 text-slate-500">
+              <LifeBuoy className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-semibold text-slate-300">Welcome to DATA360 Support</p>
+            <p className="text-xs text-slate-500 mt-1 max-w-xs">
               How can we help you today? Send a message to start chatting with an agent.
             </p>
           </div>
         ) : (
           groupedMessages.map((group) => (
-            <div key={group.date} className="space-y-3">
-              <div className="flex justify-center my-2">
-                <span className="text-[11px] font-medium bg-muted/80 backdrop-blur-xs text-muted-foreground px-2.5 py-0.5 rounded-full border border-border/30">
-                  {formatDateDivider(group.items[0]?.created_at)}
-                </span>
-              </div>
+            <div key={group.dateLabel} className="space-y-2">
+              {group.dateLabel && (
+                <div className="flex justify-center my-3">
+                  <span className="px-2.5 py-0.5 rounded-md bg-[#182229] border border-[#222d34] text-[11px] font-medium text-slate-400 shadow-xs">
+                    {group.dateLabel}
+                  </span>
+                </div>
+              )}
 
               {group.items.map((msg) => {
                 const isCustomer = msg.sender_role === 'customer';
-
-                let displayMessage = msg.message;
-                let orderTag: string | null = null;
-                if (displayMessage && displayMessage.startsWith('[ORDER_REF:')) {
-                  const endIdx = displayMessage.indexOf(']');
-                  if (endIdx !== -1) {
-                    const metaParts = displayMessage.substring(11, endIdx).split('|');
-                    orderTag = metaParts[0] || 'Order Issue';
-                    displayMessage = displayMessage.substring(endIdx + 1).trim();
-                  }
-                }
+                const orderMatch = msg.message.match(/^\[ORDER_REF:(.*?)\]\n?([\s\S]*)$/);
+                const orderMeta = orderMatch ? orderMatch[1].split('|') : null;
+                const displayText = orderMatch ? orderMatch[2] : msg.message;
 
                 return (
                   <div
                     key={msg.id}
-                    className={`flex flex-col ${isCustomer ? 'items-end' : 'items-start'}`}
+                    className={`flex ${isCustomer ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${
+                      className={`relative max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 text-xs sm:text-[13px] leading-relaxed shadow-xs ${
                         isCustomer
-                          ? 'bg-primary text-primary-foreground rounded-br-xs'
-                          : 'bg-card text-foreground border border-border/40 rounded-bl-xs'
+                          ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-xs'
+                          : 'bg-[#202c33] text-[#e9edef] rounded-tl-xs'
                       }`}
                     >
-                      {orderTag && (
-                        <div
-                          className={`mb-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide ${
-                            isCustomer
-                              ? 'bg-black/15 text-white/95'
-                              : 'bg-primary/10 text-primary'
-                          }`}
-                        >
-                          <Package className="w-3 h-3" />
-                          <span>Regarding Order: {orderTag}</span>
+                      {/* Order Context Tag on Bubble */}
+                      {orderMeta && (
+                        <div className="mb-1.5 p-2 rounded-xl bg-black/25 border border-white/10 text-[11px] space-y-0.5">
+                          <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
+                            <Package className="w-3.5 h-3.5" />
+                            <span>Order: {orderMeta[0]}</span>
+                            {orderMeta[1] && <span>• {orderMeta[1]} {orderMeta[2]}</span>}
+                          </div>
+                          {orderMeta[3] && (
+                            <div className="text-[10px] text-slate-300">
+                              Recipient: {orderMeta[3]}
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      {displayMessage && (
-                        <p className="whitespace-pre-wrap">{displayMessage}</p>
-                      )}
-
                       {msg.attachment_url && (
-                        <div className="mt-2">
+                        <div className="mb-2">
                           <AttachmentRenderer url={msg.attachment_url} />
                         </div>
                       )}
 
-                      <div
-                        className={`mt-1 flex items-center justify-end gap-1 text-[10px] select-none ${
-                          isCustomer
-                            ? 'text-primary-foreground/75'
-                            : 'text-muted-foreground/75'
-                        }`}
-                      >
+                      {displayText && (
+                        <p className="whitespace-pre-wrap break-words">{displayText}</p>
+                      )}
+
+                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-400/80">
                         <span>
-                          {msg.created_at
-                            ? format(new Date(msg.created_at), 'h:mm a')
-                            : ''}
+                          {format(new Date(msg.created_at), 'h:mm a')}
                         </span>
                         {isCustomer && (
                           <span>
                             {msg.id.startsWith('temp-') ? (
                               <span className="opacity-50">⋯</span>
                             ) : msg.read_at ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                              <CheckCheck className="w-3.5 h-3.5 text-sky-400" />
                             ) : (
                               <Check className="w-3.5 h-3.5" />
                             )}
@@ -589,45 +549,23 @@ export default function SupportPage() {
         )}
       </main>
 
-      {/* ── Dismissible Order Reference Pill ── */}
-      {orderContext && (
-        <div className="bg-primary/10 border-t border-primary/20 px-3 py-1.5 flex items-center justify-between text-xs text-primary animate-in fade-in">
-          <div className="flex items-center gap-1.5 truncate">
-            <Package className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-medium">
-              Replying about Order {orderContext.shortId}
-              {orderContext.network && orderContext.volume
-                ? ` (${orderContext.network} • ${orderContext.volume})`
-                : ''}
-            </span>
-          </div>
-          <button
-            onClick={() => setOrderContext(null)}
-            className="p-1 hover:bg-primary/20 rounded-full transition-colors"
-            title="Dismiss order context"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* ── Fixed Composer Area ── */}
-      <footer className="shrink-0 bg-card border-t border-border/40 p-2 sm:p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {/* WhatsApp Composer */}
+      <footer className="shrink-0 bg-[#202c33] border-t border-[#222d34] p-2 sm:p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {attachment && (
-          <div className="mb-2 px-2 py-1 bg-muted rounded-lg flex items-center justify-between text-xs">
-            <span className="truncate max-w-[200px] text-muted-foreground font-mono">
+          <div className="mb-2 px-2.5 py-1.5 bg-[#111b21] rounded-lg flex items-center justify-between text-xs border border-[#2a3942]">
+            <span className="truncate max-w-[200px] text-slate-300 font-mono">
               {attachment.name}
             </span>
             <button
               onClick={() => setAttachment(null)}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-slate-400 hover:text-white"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        <form onSubmit={handleSendMessage} className="flex items-end gap-1.5">
+        <form onSubmit={handleSendMessage} className="flex items-end gap-1.5 sm:gap-2">
           <input
             type="file"
             ref={fileInputRef}
@@ -642,7 +580,7 @@ export default function SupportPage() {
             type="button"
             variant="ghost"
             size="icon"
-            className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            className="h-10 w-10 shrink-0 rounded-full text-slate-400 hover:text-white hover:bg-white/10"
             onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="w-5 h-5" />
@@ -653,20 +591,16 @@ export default function SupportPage() {
             value={replyText}
             onChange={handleTextareaInput}
             onKeyDown={handleKeyDown}
-            placeholder={
-              orderContext
-                ? `Describe your issue with ${orderContext.shortId}...`
-                : 'Type a message...'
-            }
+            placeholder="Type a message..."
             rows={1}
-            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-muted/40 border-border/50 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-primary leading-relaxed"
+            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-[#2a3942] border-none text-slate-100 placeholder:text-slate-400 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-emerald-500 leading-relaxed"
           />
 
           <Button
             type="submit"
             disabled={(!replyText.trim() && !attachment) || sending}
             size="icon"
-            className="h-10 w-10 shrink-0 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs disabled:opacity-40"
+            className="h-10 w-10 shrink-0 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white shadow-xs disabled:opacity-40"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -677,26 +611,29 @@ export default function SupportPage() {
         </form>
       </footer>
 
-      {/* ── Clear Chat Confirmation Dialog ── */}
+      {/* Clear Chat Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="max-w-[340px] rounded-2xl">
+        <AlertDialogContent className="max-w-[340px] rounded-2xl bg-[#233138] border-[#2f3b43] text-slate-100">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-base font-semibold">
               Delete Message History?
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs text-muted-foreground">
-              This will clear your messages from this screen. Your account and ticket records
-              will remain intact.
+            <AlertDialogDescription className="text-xs text-slate-400">
+              This will clear your messages from your view. The admin support team will
+              still have records of past support inquiries.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row gap-2 justify-end">
-            <AlertDialogCancel disabled={deleting} className="text-xs h-9 mt-0">
+            <AlertDialogCancel
+              disabled={deleting}
+              className="text-xs h-9 mt-0 bg-transparent border-slate-600 text-slate-300 hover:bg-white/10"
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleClearHistory}
               disabled={deleting}
-              className="text-xs h-9 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              className="text-xs h-9 bg-rose-600 hover:bg-rose-700 text-white"
             >
               {deleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
