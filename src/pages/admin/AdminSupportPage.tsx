@@ -663,7 +663,7 @@ export default function AdminSupportPage() {
                           className={`text-xs truncate ${
                             thread.unreadCount > 0
                               ? 'font-bold text-foreground'
-                              : 'font-medium text-foreground'
+                              : 'font-bold text-[#2563EB]'
                           }`}
                         >
                           {thread.customerName}
@@ -717,7 +717,7 @@ export default function AdminSupportPage() {
                   </div>
 
                   <div className="min-w-0">
-                    <h2 className="text-sm font-semibold text-foreground truncate leading-tight">
+                    <h2 className="text-sm font-bold text-[#2563EB] truncate leading-tight">
                       {activeThread.customerName}
                     </h2>
                     <p className="text-[11px] text-muted-foreground truncate">
@@ -777,7 +777,7 @@ export default function AdminSupportPage() {
                 ) : messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
                     <LifeBuoy className="w-10 h-10 mb-2 opacity-30 text-primary" />
-                    <p className="text-sm font-medium text-foreground">No messages in this chat</p>
+                    <p className="text-sm font-bold text-[#2563EB]">No messages in this chat</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       Type below to send a reply to {activeThread.customerName}.
                     </p>
