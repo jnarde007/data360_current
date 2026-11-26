@@ -168,11 +168,12 @@ export default function CustomerDashboard() {
             <h2 className="text-sm lg:text-base font-display font-bold text-foreground">Quick Actions</h2>
             <div className="flex-1 h-px bg-border/60" />
           </div>
-          <div className="grid grid-cols-3 gap-2.5 lg:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 lg:gap-3">
             {[
               { to: '/checker', label: 'Results Checker', icon: FileSearch, accent: 'icon-box-primary' },
               { to: '/afa', label: 'AFA Registration', icon: UserPlus, accent: 'icon-box-amber' },
               { to: '/affiliate', label: 'Referrals', icon: Users, accent: 'icon-box-purple' },
+              { to: '/support', label: 'Support Chat', icon: MessageCircle, accent: 'icon-box-success' },
             ].map(a => (
               <Link key={a.to} to={a.to} className="group">
                 <div className="glass-card flex flex-col items-center justify-center gap-2.5 lg:gap-3 py-4 lg:py-5 px-2 transition-all duration-300 ease-out hover:-translate-y-[3px] hover:shadow-lg active:scale-[0.97] cursor-pointer">
