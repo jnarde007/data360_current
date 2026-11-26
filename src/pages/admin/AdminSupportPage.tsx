@@ -68,22 +68,43 @@ export default function AdminSupportPage() {
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
 
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  const [clearing, setClearing] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const scrollToBottom = useCallback((smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  const scrollToBottom = useCallback((smooth = false) => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      if (smooth) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
   }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom(false);
+      const t1 = setTimeout(() => scrollToBottom(false), 50);
+      const t2 = setTimeout(() => scrollToBottom(false), 200);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [messages.length, activeTicketId, scrollToBottom]);
 
   const fetchThreads = useCallback(async () => {
     try {
       const { data: tickets, error } = await supabase
         .from('support_tickets')
-        .select('id, customer_id, updated_at')
+        .select('id, customer_id, updated_at, admin_cleared_at')
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
@@ -93,10 +114,15 @@ export default function AdminSupportPage() {
         return;
       }
 
-      const customerMap = new Map<string, string>();
+      // Group latest ticket per customer
+      const customerMap = new Map<string, { tid: string; clearedAt: string | null; updatedAt: string }>();
       tickets.forEach(t => {
         if (!customerMap.has(t.customer_id)) {
-          customerMap.set(t.customer_id, t.id);
+          customerMap.set(t.customer_id, {
+            tid: t.id,
+            clearedAt: (t as any).admin_cleared_at || null,
+            updatedAt: t.updated_at
+          });
         }
       });
 
@@ -110,15 +136,22 @@ export default function AdminSupportPage() {
 
       const threadResults: CustomerThread[] = await Promise.all(
         customerIds.map(async (cid) => {
-          const tid = customerMap.get(cid)!;
+          const entry = customerMap.get(cid)!;
           const profile = profileLookup.get(cid);
 
-          const { data: msgs } = await supabase
+          let query = supabase
             .from('support_messages')
             .select('message, created_at, sender_role, read_at')
-            .eq('ticket_id', tid)
+            .eq('ticket_id', entry.tid);
+
+          // Only show messages after admin cleared time
+          if (entry.clearedAt) {
+            query = query.gt('created_at', entry.clearedAt);
+          }
+
+          const { data: msgs } = await query
             .order('created_at', { ascending: false })
-            .limit(15);
+            .limit(10);
 
           const lastMsg = msgs && msgs[0];
           const unread = (msgs || []).filter(
@@ -126,17 +159,20 @@ export default function AdminSupportPage() {
           ).length;
 
           return {
-            ticketId: tid,
+            ticketId: entry.tid,
             customerId: cid,
             customerName: profile?.full_name || 'Customer',
             customerEmail: profile?.email || 'No email',
             customerPhone: profile?.phone || '',
-            lastMessage: lastMsg?.message || 'Started a conversation',
-            lastMessageTime: lastMsg?.created_at || new Date().toISOString(),
+            lastMessage: lastMsg ? lastMsg.message : 'No messages',
+            lastMessageTime: lastMsg?.created_at || entry.updatedAt || new Date().toISOString(),
             unreadCount: unread,
           };
         })
       );
+
+      // Sort recent messages strictly to the top (descending)
+      threadResults.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
       setThreads(threadResults);
 
@@ -154,11 +190,23 @@ export default function AdminSupportPage() {
   const fetchMessages = useCallback(async (ticketId: string, smoothScroll = false) => {
     setLoadingMessages(true);
     try {
-      const { data, error } = await supabase
+      // Fetch admin cleared timestamp
+      const { data: ticketData } = await supabase
+        .from('support_tickets')
+        .select('admin_cleared_at')
+        .eq('id', ticketId)
+        .maybeSingle();
+
+      let query = supabase
         .from('support_messages')
         .select('*')
-        .eq('ticket_id', ticketId)
-        .order('created_at', { ascending: true });
+        .eq('ticket_id', ticketId);
+
+      if ((ticketData as any)?.admin_cleared_at) {
+        query = query.gt('created_at', (ticketData as any).admin_cleared_at);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) throw error;
       setMessages((data as Message[]) || []);
@@ -168,10 +216,13 @@ export default function AdminSupportPage() {
         p_reader_role: 'admin'
       });
 
-      setThreads(prev => prev.map(t => t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t));
-      setTimeout(() => scrollToBottom(smoothScroll), 60);
+      setThreads(prev =>
+        prev.map(t => (t.ticketId === ticketId ? { ...t, unreadCount: 0 } : t))
+      );
+
+      setTimeout(() => scrollToBottom(smoothScroll), 40);
     } catch (err: any) {
-      console.error('Error loading messages:', err);
+      console.error('Error fetching messages:', err);
     } finally {
       setLoadingMessages(false);
     }
@@ -216,13 +267,44 @@ export default function AdminSupportPage() {
     setSending(true);
     let uploadedUrl: string | null = null;
 
+    // Optimistic UI update: instantly show message
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg: Message = {
+      id: tempId,
+      ticket_id: activeTicketId,
+      sender_id: user.id,
+      sender_role: 'admin',
+      message: text || (attachment ? 'Attachment sent' : ''),
+      attachment_url: null,
+      read_at: null,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, optimisticMsg]);
+    setReplyText('');
+    const sentAttachment = attachment;
+    setAttachment(null);
+    if (textareaRef.current) textareaRef.current.style.height = '40px';
+    setTimeout(() => scrollToBottom(true), 40);
+
+    // Bump this thread immediately to the very top
+    setThreads(prev => {
+      const current = prev.find(t => t.ticketId === activeTicketId);
+      if (!current) return prev;
+      const updatedThread = {
+        ...current,
+        lastMessage: text || 'Attachment sent',
+        lastMessageTime: new Date().toISOString()
+      };
+      return [updatedThread, ...prev.filter(t => t.ticketId !== activeTicketId)];
+    });
+
     try {
-      if (attachment) {
-        const ext = attachment.name.split('.').pop() || 'bin';
-        const filePath = `admin/${Date.now()}.${ext}`;
+      if (sentAttachment) {
+        const ext = sentAttachment.name.split('.').pop() || 'bin';
+        const filePath = 'admin/' + Date.now() + '.' + ext;
         const { error: uploadErr } = await supabase.storage
           .from('support-attachments')
-          .upload(filePath, attachment);
+          .upload(filePath, sentAttachment);
 
         if (!uploadErr) {
           const { data: urlData } = supabase.storage
@@ -246,23 +328,11 @@ export default function AdminSupportPage() {
 
       if (insertErr) throw insertErr;
 
-      setMessages(prev => [...prev, newMsg as Message]);
-      setReplyText('');
-      setAttachment(null);
-      if (textareaRef.current) textareaRef.current.style.height = '40px';
-      setTimeout(() => scrollToBottom(true), 50);
-
-      setThreads(prev => prev.map(t => {
-        if (t.ticketId === activeTicketId) {
-          return {
-            ...t,
-            lastMessage: text || 'Attachment sent',
-            lastMessageTime: new Date().toISOString()
-          };
-        }
-        return t;
-      }));
+      // Replace temp message with confirmed db row
+      setMessages(prev => prev.map(m => m.id === tempId ? (newMsg as Message) : m));
     } catch (err: any) {
+      // Revert optimistic bubble if failed
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       toast({
         title: 'Failed to send reply',
         description: err.message || 'Please try again',
@@ -273,23 +343,41 @@ export default function AdminSupportPage() {
     }
   };
 
-  const handleClearHistory = async () => {
+  const handleDeleteConversation = async () => {
     if (!activeTicketId) return;
-    setClearing(true);
+    setDeleting(true);
     try {
-      const { error } = await supabase.rpc('admin_clear_chat_history', {
+      const { error: rpcErr } = await supabase.rpc('admin_clear_chat_history', {
         p_ticket_id: activeTicketId
       });
-      if (error) throw error;
+
+      if (rpcErr) throw rpcErr;
 
       setMessages([]);
-      setClearDialogOpen(false);
-      toast({ title: 'Chat cleared', description: 'Customer conversation history removed.' });
+      setDeleteDialogOpen(false);
+      toast({ title: 'Deleted', description: 'Messages cleared for admin. Customer messages preserved.' });
       fetchThreads();
     } catch (err: any) {
-      toast({ title: 'Clear failed', description: err.message, variant: 'destructive' });
+      toast({ title: 'Delete failed', description: err.message || 'Could not clear messages', variant: 'destructive' });
     } finally {
-      setClearing(false);
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteSingleMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase
+        .from('support_messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      toast({ title: 'Message deleted' });
+      fetchThreads();
+    } catch (err: any) {
+      toast({ title: 'Failed to delete message', description: err.message, variant: 'destructive' });
     }
   };
 
@@ -297,7 +385,7 @@ export default function AdminSupportPage() {
     setReplyText(e.target.value);
     const target = e.target;
     target.style.height = 'auto';
-    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+    target.style.height = Math.min(target.scrollHeight, 120) + 'px';
   };
 
   const activeThread = useMemo(
@@ -327,12 +415,13 @@ export default function AdminSupportPage() {
 
   return (
     <AdminLayout>
-      <div className="w-full h-[calc(100dvh-5rem)] flex bg-background rounded-2xl border border-border/50 overflow-hidden shadow-sm">
-        {/* Left: Customer List */}
+      <div className="w-full h-[calc(100dvh-5rem)] flex bg-background rounded-2xl border border-border/50 overflow-hidden shadow-xs">
+        {/* Left Sidebar: Customer Conversations (Recent at top) */}
         <aside
-          className={`${
-            activeTicketId ? 'hidden md:flex' : 'flex'
-          } w-full md:w-80 lg:w-96 flex-col border-r border-border/50 bg-card/60 shrink-0`}
+          className={
+            (activeTicketId ? 'hidden md:flex' : 'flex') +
+            ' w-full md:w-80 lg:w-96 flex-col border-r border-border/50 bg-card/60 shrink-0'
+          }
         >
           <div className="p-3.5 border-b border-border/50 space-y-3">
             <div className="flex items-center justify-between">
@@ -343,18 +432,20 @@ export default function AdminSupportPage() {
                 <button
                   type="button"
                   onClick={() => setFilter('all')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                    filter === 'all' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground'
-                  }`}
+                  className={
+                    'px-2.5 py-1 rounded-md font-medium transition-colors ' +
+                    (filter === 'all' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground')
+                  }
                 >
                   All
                 </button>
                 <button
                   type="button"
                   onClick={() => setFilter('unread')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                    filter === 'unread' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground'
-                  }`}
+                  className={
+                    'px-2.5 py-1 rounded-md font-medium transition-colors ' +
+                    (filter === 'unread' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground')
+                  }
                 >
                   Unread
                 </button>
@@ -362,57 +453,64 @@ export default function AdminSupportPage() {
             </div>
 
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search customers..."
-                className="w-full h-9 pl-9 pr-3 rounded-xl bg-muted/40 border border-border/40 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Search name, email, phone..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/40 border border-border/50 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-border/30">
             {loading ? (
-              <div className="p-8 text-center text-muted-foreground text-xs flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading chats...
+              <div className="p-8 flex flex-col items-center justify-center text-muted-foreground text-xs gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span>Loading chats...</span>
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-xs">
-                No customer conversations found.
+                {searchQuery ? 'No matching chats found' : 'No support conversations yet'}
               </div>
             ) : (
-              filteredThreads.map((t) => {
-                const isSelected = t.ticketId === activeTicketId;
+              filteredThreads.map((thread) => {
+                const isActive = thread.ticketId === activeTicketId;
                 return (
                   <button
-                    key={t.ticketId}
+                    key={thread.ticketId}
                     type="button"
-                    onClick={() => handleSelectThread(t.ticketId)}
-                    className={`w-full text-left p-3 flex items-start gap-3 transition-colors ${
-                      isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
-                    }`}
+                    onClick={() => handleSelectThread(thread.ticketId)}
+                    className={
+                      'w-full text-left p-3.5 transition-colors flex items-start gap-3 hover:bg-muted/40 ' +
+                      (isActive ? 'bg-muted/60 border-l-2 border-primary' : '')
+                    }
                   >
-                    <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0 uppercase">
-                      {t.customerName.slice(0, 2)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-semibold text-foreground text-xs truncate">
-                          {t.customerName}
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs border border-primary/20">
+                        {thread.customerName.slice(0, 2).toUpperCase()}
+                      </div>
+                      {thread.unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-card">
+                          {thread.unreadCount}
                         </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0 ml-1">
-                          {t.lastMessageTime ? format(new Date(t.lastMessageTime), 'HH:mm') : ''}
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <span className={'text-xs truncate ' + (thread.unreadCount > 0 ? 'font-bold text-foreground' : 'font-medium text-foreground')}>
+                          {thread.customerName}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {format(new Date(thread.lastMessageTime), 'h:mm a')}
                         </span>
                       </div>
-                      <p className="text-[11px] text-muted-foreground truncate">{t.lastMessage}</p>
+                      <p className={'text-xs truncate ' + (thread.unreadCount > 0 ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
+                        {thread.lastMessage}
+                      </p>
                     </div>
-                    {t.unreadCount > 0 && (
-                      <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center shrink-0">
-                        {t.unreadCount}
-                      </span>
-                    )}
                   </button>
                 );
               })
@@ -420,30 +518,31 @@ export default function AdminSupportPage() {
           </div>
         </aside>
 
-        {/* Right: Active Chat */}
+        {/* Right Pane: WhatsApp-style Active Conversation */}
         <section
-          className={`${
-            activeTicketId ? 'flex' : 'hidden md:flex'
-          } flex-1 flex-col h-full bg-muted/10 overflow-hidden`}
+          className={
+            (!activeTicketId ? 'hidden md:flex' : 'flex') +
+            ' flex-1 flex-col h-full bg-muted/10 relative min-w-0'
+          }
         >
-          {activeThread ? (
+          {activeTicketId && activeThread ? (
             <>
-              {/* Header */}
+              {/* Chat Header */}
               <div className="h-14 px-4 bg-card border-b border-border/50 flex items-center justify-between shrink-0 shadow-xs">
                 <div className="flex items-center gap-3 min-w-0">
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={handleBackToList}
-                    className="md:hidden h-8 w-8 rounded-full"
+                    className="md:hidden h-8 w-8 -ml-1 text-muted-foreground hover:text-foreground"
                   >
                     <ArrowLeft className="w-4 h-4" />
                   </Button>
-                  <div className="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs uppercase shrink-0">
-                    {activeThread.customerName.slice(0, 2)}
+                  <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 border border-primary/20">
+                    {activeThread.customerName.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-foreground text-xs truncate">
+                    <h3 className="font-semibold text-xs md:text-sm text-foreground truncate">
                       {activeThread.customerName}
                     </h3>
                     <p className="text-[11px] text-muted-foreground truncate">
@@ -452,81 +551,104 @@ export default function AdminSupportPage() {
                   </div>
                 </div>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-                      <MoreVertical className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => setClearDialogOpen(true)}
-                      className="text-destructive focus:text-destructive gap-2 text-xs"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> Clear Chat History
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="flex items-center gap-1">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem
+                        onClick={() => setDeleteDialogOpen(true)}
+                        className="text-destructive focus:text-destructive cursor-pointer flex items-center gap-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Delete Message</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
 
               {/* Messages Container */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto p-4 space-y-4"
+              >
                 {loadingMessages ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground text-xs gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading messages...
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" /> Loading messages...
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
-                    No messages yet.
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+                    <p className="text-xs">No messages yet. Send a message to start the conversation.</p>
                   </div>
                 ) : (
                   Object.entries(groupedMessages).map(([dateKey, msgs]) => (
-                    <div key={dateKey} className="space-y-3">
+                    <div key={dateKey} className="space-y-2">
                       <div className="flex justify-center my-2">
-                        <span className="px-3 py-1 rounded-full text-[10px] font-medium bg-card text-muted-foreground shadow-xs border border-border/40">
+                        <span className="text-[10px] font-medium bg-muted/80 text-muted-foreground px-2.5 py-0.5 rounded-full shadow-2xs">
                           {formatDateDivider(msgs[0]?.created_at || dateKey)}
                         </span>
                       </div>
+
                       {msgs.map((m) => {
                         const isAdmin = m.sender_role === 'admin';
                         return (
                           <div
                             key={m.id}
-                            className={`flex w-full ${isAdmin ? 'justify-end' : 'justify-start'}`}
+                            className={'flex items-end gap-1.5 group ' + (isAdmin ? 'justify-end' : 'justify-start')}
                           >
                             <div
-                              className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs break-words ${
-                                isAdmin
+                              className={
+                                'max-w-[78%] md:max-w-[65%] rounded-2xl px-3.5 py-2 text-xs shadow-2xs relative leading-relaxed ' +
+                                (isAdmin
                                   ? 'bg-primary text-primary-foreground rounded-br-xs'
-                                  : 'bg-card text-foreground border border-border/50 rounded-bl-xs'
-                              }`}
+                                  : 'bg-card text-foreground border border-border/50 rounded-bl-xs')
+                              }
                             >
                               {!isAdmin && (
-                                <p className="text-[10px] font-semibold text-primary mb-1">
+                                <p className="text-[10px] font-bold text-primary mb-0.5">
                                   {activeThread.customerName}
                                 </p>
                               )}
+
                               {m.attachment_url && (
-                                <div className="mb-2 rounded-lg overflow-hidden">
+                                <div className="mb-1.5">
                                   <AttachmentRenderer url={m.attachment_url} />
                                 </div>
                               )}
-                              <p className="whitespace-pre-wrap leading-relaxed select-text">{m.message}</p>
+
+                              {m.message && <p className="whitespace-pre-wrap break-words">{m.message}</p>}
+
                               <div
-                                className={`flex items-center justify-end gap-1 mt-1 text-[9px] ${
-                                  isAdmin ? 'text-primary-foreground/75' : 'text-muted-foreground'
-                                }`}
+                                className={
+                                  'flex items-center justify-end gap-1 mt-1 text-[9px] ' +
+                                  (isAdmin ? 'text-primary-foreground/75' : 'text-muted-foreground')
+                                }
                               >
-                                <span>{m.created_at ? format(new Date(m.created_at), 'HH:mm') : ''}</span>
+                                <span>{format(new Date(m.created_at), 'h:mm a')}</span>
                                 {isAdmin && (
                                   m.read_at ? (
                                     <CheckCheck className="w-3 h-3 text-sky-200" />
                                   ) : (
-                                    <Check className="w-3 h-3 opacity-80" />
+                                    <Check className="w-3 h-3 text-primary-foreground/60" />
                                   )
                                 )}
                               </div>
                             </div>
+
+                            {!isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleMessage(m.id)}
+                                title="Delete message"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -536,19 +658,24 @@ export default function AdminSupportPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Composer */}
-              <div className="p-2.5 bg-card border-t border-border/50 shrink-0">
+              {/* Bottom Composer */}
+              <div className="p-3 border-t border-border/50 bg-card shrink-0">
                 {attachment && (
-                  <div className="flex items-center justify-between bg-muted/70 px-3 py-1 rounded-lg mb-2 text-xs">
-                    <span className="truncate flex items-center gap-1.5 text-foreground font-medium">
+                  <div className="flex items-center justify-between bg-muted/60 px-3 py-1 rounded-xl mb-2 text-xs">
+                    <span className="truncate text-foreground font-medium flex items-center gap-1.5">
                       <Paperclip className="w-3.5 h-3.5 text-primary" /> {attachment.name}
                     </span>
-                    <button type="button" onClick={() => setAttachment(null)}>
+                    <button
+                      type="button"
+                      onClick={() => setAttachment(null)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
-                <form onSubmit={handleSendMessage} className="flex items-end gap-2 max-w-4xl mx-auto">
+
+                <form onSubmit={handleSendMessage} className="flex items-end gap-2">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -563,7 +690,7 @@ export default function AdminSupportPage() {
                     variant="ghost"
                     size="icon"
                     onClick={() => fileInputRef.current?.click()}
-                    className="h-9 w-9 rounded-full text-muted-foreground"
+                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
                   >
                     <Paperclip className="w-4 h-4" />
                   </Button>
@@ -578,8 +705,8 @@ export default function AdminSupportPage() {
                         handleSendMessage();
                       }
                     }}
-                    placeholder="Type an admin reply..."
-                    className="min-h-[38px] max-h-[120px] resize-none rounded-2xl bg-muted/40 border-border/50 text-xs py-2 px-3 leading-relaxed"
+                    placeholder="Type a reply as DATA360 Support..."
+                    className="min-h-[40px] max-h-[120px] resize-none rounded-xl bg-muted/40 border-border/50 text-xs py-2 px-3 leading-relaxed"
                   />
                   <Button
                     type="submit"
@@ -591,23 +718,23 @@ export default function AdminSupportPage() {
                 </form>
               </div>
 
-              {/* Clear History Dialog */}
-              <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+              {/* Delete Message Dialog */}
+              <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Clear Chat History?</AlertDialogTitle>
+                    <AlertDialogTitle>Delete Message?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently remove all messages for this customer conversation.
+                      This will clear the conversation messages from your admin view. Customer records will remain preserved.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={handleClearHistory}
-                      disabled={clearing}
+                      onClick={handleDeleteConversation}
+                      disabled={deleting}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
-                      {clearing ? 'Clearing...' : 'Clear History'}
+                      {deleting ? 'Deleting...' : 'Delete Message'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
