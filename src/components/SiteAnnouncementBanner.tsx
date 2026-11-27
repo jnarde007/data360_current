@@ -98,8 +98,11 @@ export function SiteAnnouncementBanner() {
 
   const theme = getTheme();
 
-  return (
-    <>
+  if (location.pathname.startsWith('/admin')) {
+    return null;
+  }
+
+  return (<>
       <div
         onClick={() => setIsDialogOpen(true)}
         className={"sticky top-0 z-50 flex items-center h-9 sm:h-10 px-3 text-xs select-none transition-all duration-200 shadow-2xs cursor-pointer " + theme.banner}
