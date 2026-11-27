@@ -11,9 +11,9 @@ type StatusConfigEntry = {
 
 const statusConfig: Record<string, StatusConfigEntry> = {
   // Order statuses
-  pending:                      { bg: 'hsl(var(--primary))', text: 'hsl(var(--primary-foreground))', border: 'hsl(var(--primary))', label: 'Pending', icon: 'pending' },
-  pending_confirmation:         { bg: 'hsl(var(--primary))', text: 'hsl(var(--primary-foreground))', border: 'hsl(var(--primary))', label: 'Awaiting Processing', icon: 'pending' },
-  pending_manual:               { bg: 'hsl(var(--primary))', text: 'hsl(var(--primary-foreground))', border: 'hsl(var(--primary))', label: 'Pending', icon: 'pending' },
+  pending:                      { bg: '#0072F5', text: '#FFFFFF', border: '#0072F5', label: 'Pending', icon: 'pending' },
+  pending_confirmation:         { bg: '#0072F5', text: '#FFFFFF', border: '#0072F5', label: 'Awaiting Processing', icon: 'pending' },
+  pending_manual:               { bg: '#0072F5', text: '#FFFFFF', border: '#0072F5', label: 'Pending', icon: 'pending' },
   processing:                   { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B', label: 'Processing', icon: 'processing' },
   awaiting_manual_fulfillment:  { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B', label: 'Processing', icon: 'processing' },
   delivered:                    { bg: '#DCFCE7', text: '#166534', border: '#22C55E', label: 'Delivered' },

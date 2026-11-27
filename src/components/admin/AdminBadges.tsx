@@ -35,7 +35,7 @@ export const BuyerTypeBadge = ({
         </Badge>
       )
       : (
-        <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0.5 font-semibold" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))', borderColor: 'hsl(var(--primary))' }}>
+        <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0.5 font-semibold" style={{ background: '#1E293B', color: '#F8FAFC', borderColor: '#334155' }}>
           <User className="w-2.5 h-2.5" /> Customer
         </Badge>
       );
