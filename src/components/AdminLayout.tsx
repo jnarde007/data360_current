@@ -433,7 +433,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-bold">Admin</span>
               </div>
           )}
-            )}
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon" onClick={() => setPaletteOpen(true)} className="h-9 w-9" aria-label="Jump to page">
                 <Search className="w-4 h-4" />
