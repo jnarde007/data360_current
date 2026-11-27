@@ -422,15 +422,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <NotificationCenter targetType="admin" />
             <AdminCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} groups={paletteGroups} />
           </header>
-          <header className={"lg:hidden sticky top-0 z-30 premium-topbar " + (isSupportChatRoute ? "hidden" : "") border-b border-border/40 px-4 py-3 flex items-center justify-between" style={{ boxShadow: 'var(--shadow-sm)' }}>
+          <header className="lg:hidden sticky top-0 z-30 premium-topbar border-b border-border/40 px-4 py-3 flex items-center justify-between" style={{ boxShadow: 'var(--shadow-sm)' }}>
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="h-9 w-9">
               <Menu className="w-5 h-5" />
             </Button>
-            <div className="flex items-center gap-2">
-              <img src={logo} alt="DATA360" className="w-7 h-7 rounded-lg object-cover" />
-              <span className="font-display font-bold text-foreground">DATA360</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-bold">Admin</span>
-            </div>
+            {!isSupportChatRoute && (
+              <div className="flex items-center gap-2">
+                <img src={logo} alt="DATA360" className="w-7 h-7 rounded-lg object-cover" />
+                <span className="font-display font-bold text-foreground">DATA360</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-bold">Admin</span>
+              </div>
+            )}
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon" onClick={() => setPaletteOpen(true)} className="h-9 w-9" aria-label="Jump to page">
                 <Search className="w-4 h-4" />
