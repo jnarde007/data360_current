@@ -461,8 +461,8 @@ export default function SupportPage() {
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
-            <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center mb-3 text-slate-500">
-              <LifeBuoy className="w-6 h-6" />
+            <div className="w-14 h-14 rounded-2xl bg-white border border-border/40 p-2 flex items-center justify-center mb-3 shadow-xs">
+              <img src="/favicon.png" alt="DATA360" className="w-full h-full object-contain" />
             </div>
             <p className="text-sm font-semibold text-slate-300">Welcome to <span className="font-bold !text-blue-600">DATA360 Support</span></p>
             <p className="text-xs text-slate-500 mt-1 max-w-xs">

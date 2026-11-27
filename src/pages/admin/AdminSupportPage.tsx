@@ -215,9 +215,7 @@ export default function AdminSupportPage() {
 
       setThreads(threadList);
 
-      if (!activeTicketId && threadList.length > 0 && window.innerWidth >= 768) {
-        setActiveTicketId(threadList[0].ticketId);
-      }
+      // Auto-open disabled: behaves like WhatsApp empty state
     } catch (err: any) {
       console.error('Error fetching support threads:', err);
     } finally {
