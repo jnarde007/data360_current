@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, Info, AlertCircle, X } from "lucide-react";
+import { AlertTriangle, Info, AlertCircle, ChevronRight, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -76,12 +76,14 @@ export function SiteAnnouncementBanner() {
           banner: "bg-rose-500/15 dark:bg-rose-950/40 text-rose-950 dark:text-rose-200 border-b border-rose-500/30 backdrop-blur-xs",
           badge: "bg-rose-500 text-white font-bold",
           icon: <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600 dark:text-rose-400" />,
+          pill: "bg-rose-600 text-white hover:bg-rose-700 shadow-xs border border-rose-500",
         };
       case "info":
         return {
           banner: "bg-sky-500/15 dark:bg-sky-950/40 text-sky-950 dark:text-sky-200 border-b border-sky-500/30 backdrop-blur-xs",
           badge: "bg-sky-600 text-white font-bold",
           icon: <Info className="w-3.5 h-3.5 shrink-0 text-sky-600 dark:text-sky-400" />,
+          pill: "bg-sky-600 text-white hover:bg-sky-700 shadow-xs border border-sky-500",
         };
       case "warning":
       default:
@@ -89,6 +91,7 @@ export function SiteAnnouncementBanner() {
           banner: "bg-amber-500/15 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 border-b border-amber-500/30 backdrop-blur-xs",
           badge: "bg-amber-500 text-amber-950 font-bold",
           icon: <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />,
+          pill: "bg-amber-950 text-white dark:bg-amber-400 dark:text-amber-950 hover:opacity-90 shadow-xs border border-amber-950/20",
         };
     }
   };
@@ -137,13 +140,17 @@ export function SiteAnnouncementBanner() {
             </div>
           </div>
 
-          {/* Right helper text on PC */}
-          <div 
+          {/* Eye-catching "Tap for details" Pill Button */}
+          <button
+            type="button"
             onClick={() => setIsDialogOpen(true)}
-            className="hidden sm:block text-[10px] uppercase font-semibold opacity-70 shrink-0 cursor-pointer pl-2 hover:opacity-100"
+            className={"inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95 shrink-0 " + theme.pill}
+            title="Read full announcement details"
           >
-            Tap for details
-          </div>
+            <span className="hidden sm:inline">Tap for details</span>
+            <span className="sm:hidden">Details</span>
+            <ChevronRight className="w-3 h-3 -mr-0.5 stroke-[2.5]" />
+          </button>
 
           {/* Dismiss button */}
           <button
