@@ -618,18 +618,17 @@
 
 /* Announcement Ticker Marquee */
 @keyframes tickerMarquee {
-  0% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
 }
 
 .animate-ticker-marquee {
-  display: inline-block;
+  display: inline-flex;
   white-space: nowrap;
-  animation: tickerMarquee 55s linear infinite;
+  animation: tickerMarquee 22s linear infinite;
   will-change: transform;
 }
 
-.animate-ticker-marquee:hover,
-.animate-ticker-marquee:active {
+.animate-ticker-marquee:hover {
   animation-play-state: paused !important;
 }
