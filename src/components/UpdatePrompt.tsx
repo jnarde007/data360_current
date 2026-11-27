@@ -38,7 +38,7 @@ export default function UpdatePrompt() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed bottom-4 left-4 right-4 z-50 sm:left-auto sm:right-4 sm:max-w-sm"
+          className="fixed bottom-20 left-4 right-4 z-[60] sm:bottom-4 sm:left-4 sm:right-auto sm:max-w-sm"
           role="status"
           aria-live="polite"
         >
