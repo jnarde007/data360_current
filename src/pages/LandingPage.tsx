@@ -41,15 +41,18 @@ export default function LandingPage() {
           </motion.div>
 
           {/* Logo + Brand Name Centerpiece */}
-          <motion.div variants={fadeUp} className="flex items-center justify-center gap-3 sm:gap-4 mb-3">
+          <motion.div
+            variants={fadeUp}
+            className="flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-4 mb-3"
+          >
             <img
               src={logo}
               alt="DATA360"
-              className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl shadow-lg border border-border/80 object-cover ring-2 ring-primary/20"
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover shadow-sm flex-shrink-0"
             />
-            <h1 className="text-4xl sm:text-6xl font-display font-extrabold tracking-tight leading-none">
-              <span className="text-foreground">DATA</span>
-              <span className="text-primary">360</span>
+            <h1 className="text-4xl sm:text-6xl font-display font-extrabold tracking-tight leading-none text-foreground flex items-center justify-center">
+              <span>DATA</span>
+              <span className="text-primary ml-0.5">360</span>
             </h1>
           </motion.div>
 
