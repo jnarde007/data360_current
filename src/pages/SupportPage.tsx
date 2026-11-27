@@ -48,6 +48,7 @@ export default function SupportPage() {
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -123,6 +124,7 @@ export default function SupportPage() {
 
       if (custErr) throw custErr;
       if (!customer?.id) return;
+      setCustomerId(customer.id);
 
       let { data: ticket } = await supabase
         .from('support_tickets')
@@ -293,15 +295,16 @@ export default function SupportPage() {
     try {
       let attachmentUrl: string | null = null;
       if (sentAttachment) {
-        const fileExt = sentAttachment.name.split('.').pop();
-        const filePath = `support/${ticketId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const fileExt = sentAttachment.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const targetFolder = customerId || user.id;
+        const filePath = `${targetFolder}/${ticketId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
-          .from('attachments')
+          .from('support-attachments')
           .upload(filePath, sentAttachment);
         if (uploadError) throw uploadError;
 
         const { data: urlData } = supabase.storage
-          .from('attachments')
+          .from('support-attachments')
           .getPublicUrl(filePath);
         attachmentUrl = urlData.publicUrl;
       }

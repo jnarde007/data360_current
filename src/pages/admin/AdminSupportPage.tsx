@@ -451,15 +451,15 @@ export default function AdminSupportPage() {
     try {
       let attachmentUrl: string | null = null;
       if (sentAttachment) {
-        const fileExt = sentAttachment.name.split('.').pop();
-        const filePath = `support/${activeTicketId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const fileExt = sentAttachment.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const filePath = `admin/${activeTicketId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
-          .from('attachments')
+          .from('support-attachments')
           .upload(filePath, sentAttachment);
         if (uploadError) throw uploadError;
 
         const { data: urlData } = supabase.storage
-          .from('attachments')
+          .from('support-attachments')
           .getPublicUrl(filePath);
         attachmentUrl = urlData.publicUrl;
       }
