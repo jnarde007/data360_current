@@ -619,7 +619,7 @@ export default function AdminSupportPage() {
               >
                 <span>Unread</span>
                 {threads.some((t) => t.unreadCount > 0) && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                 )}
               </button>
             </div>
@@ -638,7 +638,18 @@ export default function AdminSupportPage() {
             ) : (
               filteredThreads.map((thread) => {
                 const isActive = thread.ticketId === activeTicketId;
-                return (
+                
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeTicketId) {
+        handleBackToList();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTicketId]);
+
+  return (
                   <div
                     key={thread.ticketId}
                     onClick={() => handleSelectThread(thread)}
@@ -824,7 +835,7 @@ export default function AdminSupportPage() {
                             className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
                           >
                             <div
-                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isAdmin ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
+                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isAdmin ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
                             >
                               {orderCardData && (
                                 <div
