@@ -223,6 +223,19 @@ export default function AdminSupportPage() {
     }
   }, [activeTicketId]);
 
+  // ESC key to deselect active chat like WhatsApp
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeTicketId) {
+        handleBackToList();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTicketId, handleBackToList]);
+
+
+
   const fetchMessages = useCallback(async (ticketId: string, isBackground = false) => {
     if (!isBackground) setLoadingMessages(true);
     try {
@@ -637,15 +650,7 @@ export default function AdminSupportPage() {
               filteredThreads.map((thread) => {
                 const isActive = thread.ticketId === activeTicketId;
                 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && activeTicketId) {
-        handleBackToList();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTicketId]);
+
 
   return (
                   <div

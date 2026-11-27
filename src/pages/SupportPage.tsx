@@ -400,16 +400,16 @@ export default function SupportPage() {
             variant="ghost"
             size="icon"
             onClick={() => navigate('/dashboard')}
-            className="h-9 w-9 text-slate-300 hover:text-white hover:bg-white/10 rounded-full shrink-0 -ml-1"
+            className="h-9 w-9 text-slate-700 hover:text-slate-900 hover:bg-white/10 rounded-full shrink-0 -ml-1"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
 
           <div className="relative shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary font-bold text-xs sm:text-sm shadow-xs">
-              <LifeBuoy className="w-5 h-5" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white border border-border/40 p-1 flex items-center justify-center shadow-xs">
+              <img src="/favicon.png" alt="DATA360" className="w-full h-full object-contain rounded-full" />
             </div>
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#202c33]" />
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
           </div>
 
           <div className="min-w-0">
@@ -427,7 +427,7 @@ export default function SupportPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-slate-300 hover:text-white hover:bg-white/10 rounded-full"
+              className="h-9 w-9 text-slate-700 hover:text-slate-900 hover:bg-white/10 rounded-full"
             >
               <MoreVertical className="w-4 h-4" />
             </Button>
@@ -492,21 +492,40 @@ export default function SupportPage() {
                     className={`flex flex-col ${isCustomer ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isCustomer ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
+                      className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-[15px] leading-[1.45] break-words ${isCustomer ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
                     >
                       {/* Order Context Tag on Bubble */}
                       {orderMeta && (
-                        <div className="mb-1.5 p-2 rounded-xl bg-black/25 border border-white/10 text-[11px] space-y-0.5">
-                          <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
-                            <Package className="w-3.5 h-3.5 !text-blue-600 shrink-0" />
-                            <span>Order: {orderMeta[0]}</span>
-                            {orderMeta[1] && <span>• {orderMeta[1]} {orderMeta[2]}</span>}
-                          </div>
-                          {orderMeta[3] && (
-                            <div className="text-[10px] text-slate-300">
-                              Recipient: {orderMeta[3]}
+                        <div className="mb-2 p-2.5 rounded-xl bg-white/90 border border-blue-200 text-slate-900 text-xs shadow-2xs">
+                          <div className="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-blue-100">
+                            <div className="flex items-center gap-1.5 font-bold text-blue-700">
+                              <Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              <span>Order: {orderMeta[0]}</span>
                             </div>
-                          )}
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-100 text-blue-800">
+                              REPORTED
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
+                            {orderMeta[1] && (
+                              <div>
+                                <span className="font-bold text-blue-700">Network: </span>
+                                <span className="text-slate-700 font-medium">{orderMeta[1]}</span>
+                              </div>
+                            )}
+                            {orderMeta[2] && (
+                              <div>
+                                <span className="font-bold text-blue-700">Bundle: </span>
+                                <span className="text-slate-700 font-medium">{orderMeta[2]}</span>
+                              </div>
+                            )}
+                            {orderMeta[3] && (
+                              <div className="col-span-2">
+                                <span className="font-bold text-blue-700">Recipient: </span>
+                                <span className="text-slate-700 font-medium font-mono">{orderMeta[3]}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
 
