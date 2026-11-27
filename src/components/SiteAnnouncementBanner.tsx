@@ -101,27 +101,22 @@ export function SiteAnnouncementBanner() {
   return (
     <>
       <div
-        className={"sticky top-0 z-50 flex items-center h-9 sm:h-10 px-3 text-xs select-none transition-all duration-200 shadow-2xs " + theme.banner}
+        onClick={() => setIsDialogOpen(true)}
+        className={"sticky top-0 z-50 flex items-center h-9 sm:h-10 px-3 text-xs select-none transition-all duration-200 shadow-2xs cursor-pointer " + theme.banner}
         title="Tap or click to read full announcement"
       >
         <div className="flex items-center justify-between gap-2.5 w-full">
           
           {/* Left badge */}
-          <div 
-            onClick={() => setIsDialogOpen(true)}
-            className="flex items-center gap-1.5 shrink-0 font-bold z-10 cursor-pointer pr-1"
-          >
+          <div className="flex items-center gap-1.5 shrink-0 font-bold z-10 pr-1">
             {theme.icon}
             <span className={"text-[10px] tracking-wide uppercase px-2 py-0.5 rounded-full " + theme.badge}>
               {data.title || "UPDATE"}
             </span>
           </div>
 
-          {/* Scrolling Marquee on BOTH PC and Phone: Starts immediately at 0%, seamless loop, never empty */}
-          <div 
-            onClick={() => setIsDialogOpen(true)}
-            className="flex-1 overflow-hidden relative whitespace-nowrap cursor-pointer"
-          >
+          {/* Scrolling Marquee on BOTH PC and Phone: Starts immediately at 0%, full width on phone */}
+          <div className="flex-1 overflow-hidden relative whitespace-nowrap">
             <div className="animate-ticker-marquee font-medium text-xs sm:text-[13px] inline-flex items-center">
               {/* Half 1 */}
               <span className="inline-flex items-center">
@@ -140,15 +135,17 @@ export function SiteAnnouncementBanner() {
             </div>
           </div>
 
-          {/* Eye-catching "Tap for details" Pill Button */}
+          {/* Eye-catching "Tap for details" Pill Button - Shown ONLY on computer/desktop */}
           <button
             type="button"
-            onClick={() => setIsDialogOpen(true)}
-            className={"inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95 shrink-0 " + theme.pill}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsDialogOpen(true);
+            }}
+            className={"hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95 shrink-0 " + theme.pill}
             title="Read full announcement details"
           >
-            <span className="hidden sm:inline">Tap for details</span>
-            <span className="sm:hidden">Details</span>
+            <span>Tap for details</span>
             <ChevronRight className="w-3 h-3 -mr-0.5 stroke-[2.5]" />
           </button>
 
@@ -159,7 +156,7 @@ export function SiteAnnouncementBanner() {
               e.stopPropagation();
               setDismissed(true);
             }}
-            className="shrink-0 p-1 -mr-1 rounded-md opacity-60 hover:opacity-100 transition-opacity"
+            className="shrink-0 p-1 -mr-1 rounded-md opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
             aria-label="Dismiss banner"
             title="Dismiss notice"
           >
