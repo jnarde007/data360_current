@@ -625,7 +625,7 @@
 .animate-ticker-marquee {
   display: inline-flex;
   white-space: nowrap;
-  animation: tickerMarquee 22s linear infinite;
+  animation: tickerMarquee 32s linear infinite;
   will-change: transform;
 }
 

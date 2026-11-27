@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, Info, AlertCircle, ChevronRight, X } from "lucide-react";
+import { AlertTriangle, Info, AlertCircle, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -76,14 +76,12 @@ export function SiteAnnouncementBanner() {
           banner: "bg-rose-500/15 dark:bg-rose-950/40 text-rose-950 dark:text-rose-200 border-b border-rose-500/30 backdrop-blur-xs",
           badge: "bg-rose-500 text-white font-bold",
           icon: <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600 dark:text-rose-400" />,
-          action: "text-rose-700 dark:text-rose-300 hover:text-rose-900",
         };
       case "info":
         return {
           banner: "bg-sky-500/15 dark:bg-sky-950/40 text-sky-950 dark:text-sky-200 border-b border-sky-500/30 backdrop-blur-xs",
           badge: "bg-sky-600 text-white font-bold",
           icon: <Info className="w-3.5 h-3.5 shrink-0 text-sky-600 dark:text-sky-400" />,
-          action: "text-sky-700 dark:text-sky-300 hover:text-sky-900",
         };
       case "warning":
       default:
@@ -91,7 +89,6 @@ export function SiteAnnouncementBanner() {
           banner: "bg-amber-500/15 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 border-b border-amber-500/30 backdrop-blur-xs",
           badge: "bg-amber-500 text-amber-950 font-bold",
           icon: <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />,
-          action: "text-amber-800 dark:text-amber-300 hover:text-amber-950",
         };
     }
   };
@@ -102,47 +99,50 @@ export function SiteAnnouncementBanner() {
     <>
       <div
         className={"sticky top-0 z-50 flex items-center h-9 sm:h-10 px-3 text-xs select-none transition-all duration-200 shadow-2xs " + theme.banner}
+        title="Tap or click to read full announcement"
       >
-        <div className="container mx-auto flex items-center justify-between gap-3 w-full max-w-6xl">
+        <div className="flex items-center justify-between gap-2.5 w-full">
           
-          {/* MOBILE VIEW (Below sm): Starts immediately on screen, seamless loop */}
+          {/* Left badge */}
           <div 
             onClick={() => setIsDialogOpen(true)}
-            className="sm:hidden flex items-center gap-2 flex-1 overflow-hidden cursor-pointer"
+            className="flex items-center gap-1.5 shrink-0 font-bold z-10 cursor-pointer pr-1"
           >
-            <div className="flex items-center gap-1 shrink-0 font-bold">
-              {theme.icon}
-              <span className={"text-[10px] tracking-wide px-1.5 py-0.5 rounded-full " + theme.badge}>
-                {data.title || "UPDATE"}
+            {theme.icon}
+            <span className={"text-[10px] tracking-wide uppercase px-2 py-0.5 rounded-full " + theme.badge}>
+              {data.title || "UPDATE"}
+            </span>
+          </div>
+
+          {/* Scrolling Marquee on BOTH PC and Phone: Starts immediately at 0%, seamless loop, never empty */}
+          <div 
+            onClick={() => setIsDialogOpen(true)}
+            className="flex-1 overflow-hidden relative whitespace-nowrap cursor-pointer"
+          >
+            <div className="animate-ticker-marquee font-medium text-xs sm:text-[13px] inline-flex items-center">
+              {/* Half 1 */}
+              <span className="inline-flex items-center">
+                <span>{data.message}</span>
+                <span className="mx-8 opacity-40">•</span>
+                <span>{data.message}</span>
+                <span className="mx-8 opacity-40">•</span>
               </span>
-            </div>
-            <div className="flex-1 overflow-hidden relative whitespace-nowrap">
-              <div className="animate-ticker-marquee font-medium text-xs">
+              {/* Half 2 (seamless duplicate for infinite continuous scroll) */}
+              <span className="inline-flex items-center" aria-hidden="true">
                 <span>{data.message}</span>
-                <span className="mx-6 opacity-40">•</span>
+                <span className="mx-8 opacity-40">•</span>
                 <span>{data.message}</span>
-                <span className="mx-6 opacity-40">•</span>
-              </div>
+                <span className="mx-8 opacity-40">•</span>
+              </span>
             </div>
           </div>
 
-          {/* DESKTOP / PC VIEW (sm and above): Centered, static, zero delay, immediately readable */}
+          {/* Right helper text on PC */}
           <div 
             onClick={() => setIsDialogOpen(true)}
-            className="hidden sm:flex items-center justify-center gap-2.5 flex-1 cursor-pointer mx-auto py-1"
+            className="hidden sm:block text-[10px] uppercase font-semibold opacity-70 shrink-0 cursor-pointer pl-2 hover:opacity-100"
           >
-            <div className="flex items-center gap-1.5 shrink-0">
-              {theme.icon}
-              <span className={"text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md " + theme.badge}>
-                {data.title || "UPDATE"}
-              </span>
-            </div>
-            <p className="font-medium text-xs sm:text-[13px] truncate max-w-2xl text-center">
-              {data.message}
-            </p>
-            <span className={"inline-flex items-center gap-0.5 text-[11px] font-semibold underline underline-offset-2 shrink-0 " + theme.action}>
-              Details <ChevronRight className="w-3 h-3" />
-            </span>
+            Tap for details
           </div>
 
           {/* Dismiss button */}
