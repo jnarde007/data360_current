@@ -608,7 +608,7 @@ export default function SupportPage() {
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             rows={1}
-            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-slate-100 border-none text-slate-900 placeholder:text-slate-500 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-emerald-500 leading-relaxed"
+            className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-slate-100 border-none text-slate-900 placeholder:text-slate-500 text-[15px] focus-visible:ring-1 focus-visible:ring-emerald-500 leading-relaxed"
           />
 
           <Button

@@ -969,7 +969,7 @@ export default function AdminSupportPage() {
                     onKeyDown={handleKeyDown}
                     placeholder={`Reply to ${activeThread.customerName}...`}
                     rows={1}
-                    className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-muted/40 border-border/50 text-xs sm:text-[13px] focus-visible:ring-1 focus-visible:ring-primary leading-relaxed"
+                    className="min-h-[42px] max-h-[120px] resize-none py-2.5 px-3.5 rounded-2xl bg-muted/40 border-border/50 text-[15px] focus-visible:ring-1 focus-visible:ring-primary leading-relaxed"
                   />
 
                   <Button
