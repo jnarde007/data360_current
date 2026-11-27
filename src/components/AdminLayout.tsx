@@ -206,6 +206,7 @@ function NavGroupSection({
 }
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
+  const isSupportChatRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/support');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState('');
@@ -421,7 +422,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <NotificationCenter targetType="admin" />
             <AdminCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} groups={paletteGroups} />
           </header>
-          <header className="lg:hidden sticky top-0 z-30 premium-topbar border-b border-border/40 px-4 py-3 flex items-center justify-between" style={{ boxShadow: 'var(--shadow-sm)' }}>
+          <header className={"lg:hidden sticky top-0 z-30 premium-topbar " + (isSupportChatRoute ? "hidden" : "") border-b border-border/40 px-4 py-3 flex items-center justify-between" style={{ boxShadow: 'var(--shadow-sm)' }}>
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="h-9 w-9">
               <Menu className="w-5 h-5" />
             </Button>

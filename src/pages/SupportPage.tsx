@@ -492,7 +492,7 @@ export default function SupportPage() {
                     className={`flex flex-col ${isCustomer ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isCustomer ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
+                      className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isCustomer ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
                     >
                       {/* Order Context Tag on Bubble */}
                       {orderMeta && (
