@@ -843,39 +843,44 @@ export default function AdminSupportPage() {
                             className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
                           >
                             <div
-                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-[13px] leading-relaxed break-words ${isAdmin ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
+                              className={`relative max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-[15px] leading-[1.45] break-words ${isAdmin ? 'bg-[#4E89E8] text-white rounded-br-xs' : 'bg-[#E8F0FA] text-slate-900 rounded-bl-xs'}`}
                             >
                               {orderCardData && (
-                                <div
-                                  className={`mb-2 p-2 rounded-xl border text-xs ${
-                                    isAdmin ? 'text-white/80' : 'text-slate-500'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2 font-semibold pb-1 border-b border-current/15 mb-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <Package className="w-3.5 h-3.5 !text-blue-600 shrink-0" />
+                                <div className="mb-2 p-2.5 rounded-xl bg-white border border-blue-200/80 text-slate-900 text-xs shadow-2xs">
+                                  <div className="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-blue-100">
+                                    <div className="flex items-center gap-1.5 font-bold text-blue-700">
+                                      <Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                                       <span>Order: {orderCardData.shortId}</span>
                                     </div>
-                                    <span className="uppercase text-[10px] px-1.5 py-0.5 rounded-md bg-current/15">
-                                      {orderCardData.status || 'Active'}
+                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                      orderCardData.status?.toLowerCase() === "delivered"
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : orderCardData.status?.toLowerCase() === "rejected" || orderCardData.status?.toLowerCase() === "failed"
+                                        ? "bg-rose-100 text-rose-800"
+                                        : "bg-blue-100 text-blue-800"
+                                    }`}>
+                                      {orderCardData.status || "REPORTED"}
                                     </span>
                                   </div>
 
-                                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] opacity-90">
+                                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
                                     {orderCardData.network && (
-                                      <span>
-                                        <strong className="!text-blue-600 font-bold">Network:</strong> {orderCardData.network}
-                                      </span>
+                                      <div>
+                                        <span className="font-bold text-blue-700">Network: </span>
+                                        <span className="text-slate-700 font-medium">{orderCardData.network}</span>
+                                      </div>
                                     )}
                                     {orderCardData.volume && (
-                                      <span>
-                                        <strong className="!text-blue-600 font-bold">Bundle:</strong> {orderCardData.volume}
-                                      </span>
+                                      <div>
+                                        <span className="font-bold text-blue-700">Bundle: </span>
+                                        <span className="text-slate-700 font-medium">{orderCardData.volume}</span>
+                                      </div>
                                     )}
                                     {orderCardData.phone && (
-                                      <span className="col-span-2 font-mono">
-                                        <strong className="!text-blue-600 font-bold">Recipient:</strong> {orderCardData.phone}
-                                      </span>
+                                      <div className="col-span-2">
+                                        <span className="font-bold text-blue-700">Recipient: </span>
+                                        <span className="text-slate-700 font-medium font-mono">{orderCardData.phone}</span>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -891,7 +896,7 @@ export default function AdminSupportPage() {
 
                               <div
                                 className={`mt-1 flex items-center justify-end gap-1 text-[10px] select-none ${
-                                  isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
+                                  isAdmin ? 'text-white/80 font-medium' : 'text-slate-500 font-medium'
                                 }`}
                               >
                                 <span>
