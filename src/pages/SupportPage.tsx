@@ -539,7 +539,7 @@ export default function SupportPage() {
                         <p className="whitespace-pre-wrap break-words">{displayText}</p>
                       )}
 
-                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-400/80">
+                      <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] select-none ${isCustomer ? 'text-white/80 font-medium' : 'text-slate-500 font-medium'}`}>
                         <span>
                           {format(new Date(msg.created_at), 'h:mm a')}
                         </span>
@@ -548,9 +548,9 @@ export default function SupportPage() {
                             {msg.id.startsWith('temp-') ? (
                               <span className="opacity-50">⋯</span>
                             ) : msg.read_at ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-sky-400" />
+                              <CheckCheck className="w-3.5 h-3.5 text-blue-100" />
                             ) : (
-                              <Check className="w-3.5 h-3.5" />
+                              <Check className="w-3.5 h-3.5 text-white/70" />
                             )}
                           </span>
                         )}

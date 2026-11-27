@@ -67,6 +67,11 @@ export default function AdminSupportPage() {
   const [loading, setLoading] = useState(true);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
 
+  const handleBackToList = useCallback(() => {
+    setActiveTicketId(null);
+    setSearchParams({});
+  }, [setSearchParams]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [replyText, setReplyText] = useState('');
@@ -843,7 +848,7 @@ export default function AdminSupportPage() {
                               {orderCardData && (
                                 <div
                                   className={`mb-2 p-2 rounded-xl border text-xs ${
-                                    isAdmin ? '!bg-[#4E89E8] !text-white rounded-br-xs shadow-xs' : '!bg-[#E8F0FA] !text-slate-900 !border-0 rounded-bl-xs shadow-xs'
+                                    isAdmin ? 'text-white/80' : 'text-slate-500'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between gap-2 font-semibold pb-1 border-b border-current/15 mb-1.5">
@@ -899,7 +904,7 @@ export default function AdminSupportPage() {
                                     {msg.id.startsWith('temp-') ? (
                                       <span className="opacity-50">⋯</span>
                                     ) : msg.read_at ? (
-                                      <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                                      <CheckCheck className="w-3.5 h-3.5 text-blue-100" />
                                     ) : (
                                       <Check className="w-3.5 h-3.5" />
                                     )}
